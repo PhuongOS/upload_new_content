@@ -1,0 +1,7 @@
+venv/
+token.json
+uploads_temp/
+__pycache__/
+.DS_Store
+.vscode/
+assect/AouthGoogle.json
