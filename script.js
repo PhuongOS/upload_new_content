@@ -17,6 +17,8 @@ const userEmailSpan = document.getElementById('userEmail');
 const configDisplay = document.getElementById('configDisplay');
 const statusMessage = document.getElementById('statusMessage');
 
+
+
 window.onload = () => {
     // Load config
     parentFolderInput.value = localStorage.getItem('parentFolderId') || DEFAULT_DRIVE_ID;
@@ -24,7 +26,34 @@ window.onload = () => {
 
     // Check Auth Status with Backend
     checkBackendAuth();
+    // Start tracking existing tasks if any
+    pollTasks();
 };
+
+async function pollTasks() {
+    setInterval(async () => {
+        try {
+            const res = await fetch('/api/tasks');
+            const tasks = await res.json();
+
+            // Minimal UI to show background task status
+            // We'll just update the statusMessage for the CURRENT task if it exists
+            const currentTaskId = localStorage.getItem('lastTaskId');
+            if (currentTaskId && tasks[currentTaskId]) {
+                const task = tasks[currentTaskId];
+                if (task.status === 'processing') {
+                    addProgressItem(`[BG] ${task.progress}`);
+                } else if (task.status === 'success') {
+                    addProgressItem(`✅ [BG] ${task.message}`);
+                    localStorage.removeItem('lastTaskId');
+                } else if (task.status === 'error') {
+                    addProgressItem(`❌ [BG] Error: ${task.message}`);
+                    localStorage.removeItem('lastTaskId');
+                }
+            }
+        } catch (e) { }
+    }, 3000);
+}
 
 function toggleConfig() {
     configInputs.style.display = configInputs.style.display === 'none' ? 'block' : 'none';
@@ -103,15 +132,13 @@ confirmBtn.onclick = async () => {
     const folderName = folderNameInput.value.trim();
 
     if (!parentId || !sheetId) return alert("Please configure Parent Folder ID and Sheet ID!");
-    if (!folderName) return alert("Please enter a Folder Name!");
-    if (thumbnailInput.files.length === 0) return alert("Please select a Thumbnail!");
+    if (!folderName) return alert("Vui lòng nhập Chủ đề / Tên thư mục!");
+    if (thumbnailInput.files.length === 0) return alert("Vui lòng chọn Thumbnail!");
 
     confirmBtn.disabled = true;
-    confirmBtn.textContent = "Processing...";
-    progressList.innerHTML = "";
-    statusMessage.textContent = "Uploading... Please wait.";
+    confirmBtn.textContent = "Starting Background Task...";
+    statusMessage.textContent = "Gửi yêu cầu lên server...";
 
-    // Build FormData
     const formData = new FormData();
     formData.append('parentId', parentId);
     formData.append('sheetId', sheetId);
@@ -123,7 +150,7 @@ confirmBtn.onclick = async () => {
     }
 
     try {
-        addProgressItem("Sending data to backend server...");
+        addProgressItem(`Gửi dữ liệu: ${folderName}`);
 
         const response = await fetch('/api/upload', {
             method: 'POST',
@@ -132,27 +159,26 @@ confirmBtn.onclick = async () => {
 
         const result = await response.json();
 
-        if (response.ok && result.status === 'success') {
-            addProgressItem("✅ Process Completed Successfully!");
-            statusMessage.textContent = "Success!";
-            confirmBtn.className = "btn btn-success"; // Fixed class usage
-            confirmBtn.textContent = "Success!";
-            alert("Upload Completed Successfully!");
+        if (response.ok && result.status === 'queued') {
+            localStorage.setItem('lastTaskId', result.task_id);
+            addProgressItem("🚀 Đã bắt đầu Upload ngầm! Bạn có thể tiếp tục nhập nội dung mới ngay.");
+            statusMessage.textContent = "Đang chạy ngầm...";
+
+            // Allow user to reset and continue immediately
+            if (confirm("Upload đã được đưa vào hàng đợi. Bạn có muốn reset form để nhập tiếp không?")) {
+                document.getElementById('resetBtn').click();
+            }
         } else {
             throw new Error(result.message || "Unknown error");
         }
 
     } catch (err) {
         console.error(err);
-        addProgressItem(`❌ Error: ${err.message}`);
+        addProgressItem(`❌ Lỗi: ${err.message}`);
         statusMessage.textContent = "Error";
-        confirmBtn.className = "btn btn-error";
-        alert(`Process Failed: ${err.message}`);
+        alert(`Lỗi: ${err.message}`);
     } finally {
-        setTimeout(() => {
-            confirmBtn.disabled = false;
-            confirmBtn.textContent = "Confirm & Upload";
-            confirmBtn.className = "btn btn-confirm";
-        }, 3000);
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = "Confirm & Upload";
     }
 };

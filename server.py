@@ -75,16 +75,28 @@ def auth_status():
             return jsonify({"connected": False, "error": str(e)})
     return jsonify({"connected": False})
 
-@app.route('/api/upload', methods=['POST'])
-def upload_files():
+import threading
+import uuid
+
+# Storage for task status
+tasks = {}
+
+@app.route('/api/tasks')
+def get_tasks():
+    return jsonify(tasks)
+
+def background_upload(task_id, form_data, files_data):
     try:
+        tasks[task_id] = {"status": "processing", "progress": "Starting upload..."}
+        
         creds = get_creds()
         drive_service = build('drive', 'v3', credentials=creds)
         sheet_service = build('sheets', 'v4', credentials=creds)
 
-        parent_id = request.form.get('parentId')
-        sheet_id = request.form.get('sheetId')
-        folder_name = request.form.get('folderName')
+        parent_id = form_data.get('parentId')
+        sheet_id = form_data.get('sheetId')
+        folder_name = form_data.get('folderName')
+        topic = form_data.get('topic', '')
         
         # 1. Create Subfolders
         def create_folder(name, pid):
@@ -92,77 +104,156 @@ def upload_files():
             f = drive_service.files().create(body=meta, fields='id').execute()
             return f.get('id')
 
+        tasks[task_id]["progress"] = "Creating folders..."
         image_folder_id = create_folder(f"{folder_name}-image", parent_id)
         video_folder_id = create_folder(f"{folder_name}-video", parent_id)
 
         uploaded_links = {'videos': [], 'images': [], 'thumb': ''}
         
         # Helper to upload
-        def upload_to_drive(file_storage, folder_id):
-            filename = secure_filename(file_storage.filename)
-            filepath = os.path.join(UPLOAD_FOLDER, filename)
-            file_storage.save(filepath)
+        def upload_to_drive(file_bytes, filename, content_type, folder_id):
+            temp_name = f"{task_id}_{secure_filename(filename)}"
+            filepath = os.path.join(UPLOAD_FOLDER, temp_name)
+            with open(filepath, 'wb') as f:
+                f.write(file_bytes)
             
-            meta = {'name': file_storage.filename, 'parents': [folder_id]}
-            media = MediaFileUpload(filepath, resumable=True)
+            meta = {'name': filename, 'parents': [folder_id]}
+            media = MediaFileUpload(filepath, mimetype=content_type, resumable=True)
             
             f = drive_service.files().create(body=meta, media_body=media, fields='id,webViewLink').execute()
             
-            # Cleanup
             os.remove(filepath)
             return f.get('webViewLink')
 
         # 2. Upload Thumbnail
-        if 'thumbnail' in request.files:
-            thumb = request.files['thumbnail']
-            if thumb.filename != '':
-                link = upload_to_drive(thumb, image_folder_id)
-                uploaded_links['thumb'] = link
+        if 'thumbnail' in files_data:
+            tasks[task_id]["progress"] = "Uploading thumbnail..."
+            t = files_data['thumbnail']
+            link = upload_to_drive(t['content'], t['filename'], t['content_type'], image_folder_id)
+            uploaded_links['thumb'] = link
 
         # 3. Upload Files
-        files = request.files.getlist('files')
-        for f in files:
-            if f.filename == '': continue
-            
-            is_video = f.content_type.startswith('video/')
+        for i, f in enumerate(files_data.get('files', [])):
+            tasks[task_id]["progress"] = f"Uploading file {i+1}/{len(files_data['files'])}..."
+            is_video = f['content_type'].startswith('video/')
             target_id = video_folder_id if is_video else image_folder_id
             
-            link = upload_to_drive(f, target_id)
+            link = upload_to_drive(f['content'], f['filename'], f['content_type'], target_id)
             if is_video:
                 uploaded_links['videos'].append(link)
             else:
                 uploaded_links['images'].append(link)
 
         # 4. Update Sheet
-        # Get next STT
-        res = sheet_service.spreadsheets().values().get(spreadsheetId=sheet_id, range='Content!A:A').execute()
-        num_rows = len(res.get('values', []))
-        next_stt = num_rows if num_rows > 0 else 1
+        tasks[task_id]["progress"] = "Updating Google Sheet..."
         
-        # Determine image links (slice to max 9)
-        img_links = uploaded_links['images'][:9]
-        # Pad with empty strings if less than 9
-        while len(img_links) < 9:
-            img_links.append("")
+        # Get starting STT
+        res = sheet_service.spreadsheets().values().get(spreadsheetId=sheet_id, range='Content!A:A').execute()
+        current_rows_count = len(res.get('values', []))
+        next_stt = current_rows_count if current_rows_count > 0 else 1
 
-        row = [
-            next_stt, "", "", "Chờ Đăng", "", "Có", "", "", "", "", "", "",
-            uploaded_links['videos'][0] if uploaded_links['videos'] else "",
-            uploaded_links['thumb'],
-            *img_links
-        ]
+        all_new_rows = []
+        thumb_link = uploaded_links['thumb']
 
-        sheet_service.spreadsheets().values().append(
-            spreadsheetId=sheet_id,
-            range='Content!A:A',
-            valueInputOption='USER_ENTERED',
-            body={"values": [row]}
-        ).execute()
+        # - Each Video gets its own row
+        for v_link in uploaded_links['videos']:
+            row = [
+                next_stt,   # A: STT
+                "",         # B
+                "",         # C
+                "Chờ Đăng", # D: Status
+                "",         # E
+                "Có",       # F: "Có"
+                "",         # G
+                folder_name,# H: Chủ đề
+                "",         # I
+                "",         # J
+                "",         # K
+                "",         # L
+                v_link,     # M: Video Link
+                thumb_link, # N: Thumbnail
+                ""          # O: Image Link (Empty)
+            ]
+            all_new_rows.append(row)
+            next_stt += 1
 
-        return jsonify({"status": "success", "message": "Upload Completed!"})
+        # - All Images together in one row
+        if uploaded_links['images']:
+            # Max 9 images horizontally as per typical sheet structure O-W
+            img_links = uploaded_links['images'][:9]
+            row = [
+                next_stt,   # A: STT
+                "",         # B
+                "",         # C
+                "Chờ Đăng", # D: Status
+                "",         # E
+                "Có",       # F: "Có"
+                "",         # G
+                folder_name,# H: Chủ đề
+                "",         # I
+                "",         # J
+                "",         # K
+                "",         # L
+                "",         # M: Video Link (Empty)
+                thumb_link, # N: Thumbnail
+                *img_links  # O, P, Q...: All Image Links
+            ]
+            all_new_rows.append(row)
+            next_stt += 1
+
+        if all_new_rows:
+            sheet_service.spreadsheets().values().append(
+                spreadsheetId=sheet_id,
+                range='Content!A:A',
+                valueInputOption='USER_ENTERED',
+                body={"values": all_new_rows}
+            ).execute()
+
+        tasks[task_id] = {"status": "success", "progress": "Completed!", "message": f"Created {len(all_new_rows)} rows for '{folder_name}'."}
 
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Task Error: {e}")
+        tasks[task_id] = {"status": "error", "progress": "Failed", "message": str(e)}
+
+@app.route('/api/upload', methods=['POST'])
+def upload_files():
+    try:
+        # We must read files now as the request context will be lost in thread
+        form_data = {
+            'parentId': request.form.get('parentId'),
+            'sheetId': request.form.get('sheetId'),
+            'folderName': request.form.get('folderName'),
+            'topic': request.form.get('topic')
+        }
+        
+        files_data = {'files': []}
+        if 'thumbnail' in request.files:
+            t = request.files['thumbnail']
+            files_data['thumbnail'] = {
+                'content': t.read(),
+                'filename': t.filename,
+                'content_type': t.content_type
+            }
+        
+        files = request.files.getlist('files')
+        for f in files:
+            if f.filename != '':
+                files_data['files'].append({
+                    'content': f.read(),
+                    'filename': f.filename,
+                    'content_type': f.content_type
+                })
+
+        task_id = str(uuid.uuid4())
+        tasks[task_id] = {"status": "queued", "progress": "Initializing..."}
+        
+        thread = threading.Thread(target=background_upload, args=(task_id, form_data, files_data))
+        thread.start()
+
+        return jsonify({"status": "queued", "task_id": task_id, "message": "Upload started in background. You can continue or leave."})
+
+    except Exception as e:
+        print(f"Server Error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':
