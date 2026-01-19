@@ -303,6 +303,34 @@ input[type="text"]:focus {
   text-align: center;
 }
 
+.text-center {
+  text-align: center;
+}
+
+.card-select {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s;
+  margin-top: 4px;
+}
+
+.card-select:focus {
+  border-color: var(--primary-main);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.card-select option {
+  background: #1a1a1a;
+  color: #fff;
+}
+
 /* Buttons */
 .btn {
   display: flex;

@@ -19,6 +19,8 @@ const viewTitle = document.getElementById('view-title');
 // State for Media Calendar updates
 let currentCalendarData = [];
 let activeScheduleTarget = { index: null, platform: null };
+let facebookConfigs = [];
+let youtubeConfigs = [];
 
 // Sidebar Navigation Logic
 const navItems = document.querySelectorAll('.nav-item');
@@ -53,6 +55,8 @@ window.onload = () => {
 
     // Check Auth Status with Backend
     checkBackendAuth();
+    // Load configs for dropdowns
+    loadConfigs();
     // Start tracking existing tasks if any
     pollTasks();
 
@@ -102,7 +106,21 @@ async function pollTasks() {
                 }
             }
         } catch (e) { }
-    }, 3000);
+    }, 5000);
+}
+
+async function loadConfigs() {
+    try {
+        const [fbRes, ytRes] = await Promise.all([
+            fetch('/api/v2/sheets/Facebook_Config'),
+            fetch('/api/v2/sheets/Youtube_Config')
+        ]);
+        if (fbRes.ok) facebookConfigs = await fbRes.json();
+        if (ytRes.ok) youtubeConfigs = await ytRes.json();
+        console.log("Configs loaded:", { facebook: facebookConfigs.length, youtube: youtubeConfigs.length });
+    } catch (err) {
+        console.error("Error loading configs:", err);
+    }
 }
 
 function saveConfig() {
@@ -186,50 +204,66 @@ function renderCards(container, data, sheetName) {
 
     const platform = sheetName === 'Facebook_db' ? 'facebook' : 'youtube';
 
-    container.innerHTML = data.map((item, index) => `
-        <div class="content-card">
-            <div class="card-header">
-                <div class="card-title" title="${item.Name_video || item.page?.name || 'No Name'}">
-                    ${item.Name_video || item.page?.name || 'No Title'}
-                </div>
-                <div class="card-id">#${item.STT || item.stt}</div>
-            </div>
-            
-            <div class="card-body">
-                <div class="card-info-item">
-                    <i class="fas fa-folder-open"></i>
-                    <span>ID Drive: ${item.Id_media_on_drive?.substring(0, 10)}...</span>
-                </div>
-                ${platform === 'facebook' ? `
-                    <div class="card-info-item">
-                        <i class="fab fa-facebook"></i>
-                        <span>Page: ${item.page?.name || 'N/A'}</span>
-                    </div>
-                ` : `
-                    <div class="card-info-item">
-                        <i class="fab fa-youtube"></i>
-                        <span>Channel: ${item.channel?.name || 'N/A'}</span>
-                    </div>
-                `}
-                <div class="card-info-item">
-                    <i class="fas fa-clock"></i>
-                    <span>Schedule: ${item.Calendar || item.calendar || 'N/A'}</span>
-                </div>
-                <div>
-                   <span class="badge badge-${platform}">${platform}</span>
-                </div>
-            </div>
+    container.innerHTML = data.map((item, index) => {
+        const configs = platform === 'facebook' ? facebookConfigs : youtubeConfigs;
+        const currentVal = platform === 'facebook' ? (item.page?.id || "") : (item.channel?.id || "");
 
-            <div class="card-actions">
-                <button class="btn-icon" onclick="openDriveLink('${item.Link_on_drive || item.link_on_drive || ''}')" title="View on Drive">
-                    <i class="fas fa-external-link-alt"></i>
-                </button>
-                <button class="btn-icon delete" onclick="deleteRow('${sheetName}', ${index})" title="Delete">
-                    <i class="fas fa-trash-alt"></i>
-                </button>
+        const dropdownHtml = `
+            <select class="card-select" onchange="updateCardField('${sheetName}', ${index}, { platform: '${platform}', id: this.value, name: this.options[this.selectedIndex].text })">
+                <option value="">-- Chọn ${platform === 'facebook' ? 'Page' : 'Kênh'} --</option>
+                ${configs.map(c => {
+            const id = platform === 'facebook' ? c.page_id : c.channel_id;
+            const name = platform === 'facebook' ? `${c.page_name} : ${c.page_id}` : `${c.channel_name} : ${c.channel_id}`;
+            return `<option title="${id}" value="${id}" ${id === currentVal ? 'selected' : ''}>${name}</option>`;
+        }).join('')}
+            </select>
+        `;
+
+        return `
+            <div class="content-card">
+                <div class="card-header">
+                    <div class="card-title" title="${item.video_name || item.Name_video || 'No Name'}">
+                        ${item.video_name || item.Name_video || 'No Title'}
+                    </div>
+                    <div class="card-id">#${item.stt || item.STT || (index + 1)}</div>
+                </div>
+                
+                <div class="card-body">
+                    <div class="card-info-item">
+                        <i class="fas fa-folder-open"></i>
+                        <span>ID Drive: ${item.media_drive_id || item.Id_media_on_drive || 'N/A'}</span>
+                    </div>
+                    
+                    <div class="card-info-item">
+                        <i class="${platform === 'facebook' ? 'fab fa-facebook' : 'fab fa-youtube'}"></i>
+                        <div style="flex:1">
+                            <span style="display:block; font-size: 11px; opacity: 0.6; margin-bottom: 2px;">
+                                ${platform === 'facebook' ? 'Page Selection (Name : ID)' : 'Channel Selection (Name : ID)'}:
+                            </span>
+                            ${dropdownHtml}
+                        </div>
+                    </div>
+                    
+                    <div class="card-info-item">
+                        <i class="fas fa-clock"></i>
+                        <span>Schedule: ${item.calendar || item.Calendar || 'N/A'}</span>
+                    </div>
+                    <div>
+                       <span class="badge badge-${platform}">${platform}</span>
+                    </div>
+                </div>
+
+                <div class="card-actions">
+                    <button class="btn-icon" onclick="openDriveLink('${item.video_url || item.Video_url || item.Link_on_drive || ''}')" title="View on Drive">
+                        <i class="fas fa-external-link-alt"></i>
+                    </button>
+                    <button class="btn-icon delete" onclick="deleteRow('${sheetName}', ${index})" title="Delete">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                </div>
             </div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 function renderCalendar(container, data) {
@@ -309,6 +343,40 @@ function renderCalendar(container, data) {
     `;
 
     container.innerHTML = html;
+}
+
+async function updateCardField(sheetName, index, fieldData) {
+    try {
+        // Fetch full row first
+        const loadRes = await fetch(`/api/v2/sheets/${sheetName}`);
+        const rows = await loadRes.json();
+        const row = rows[index];
+        if (!row) return;
+
+        // Update based on platform
+        if (fieldData.platform === 'facebook') {
+            if (!row.page) row.page = {};
+            row.page.id = fieldData.id;
+            row.page.name = fieldData.name;
+        } else if (fieldData.platform === 'youtube') {
+            if (!row.channel) row.channel = {};
+            row.channel.id = fieldData.id;
+            row.channel.name = fieldData.name;
+        }
+
+        const res = await fetch(`/api/v2/sheets/${sheetName}/${index}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(row)
+        });
+
+        if (res.ok) {
+            console.log("Updated field successfully");
+            loadSheetData(sheetName); // Refresh UI
+        }
+    } catch (err) {
+        console.error("Update failed:", err);
+    }
 }
 
 function openDriveLink(link) {
