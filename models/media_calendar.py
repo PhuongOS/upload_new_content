@@ -27,17 +27,19 @@ class MediaCalendarModel:
     COL_TIK_POST_TYPE = 16
     COL_CALENDAR = 17
     COL_SCRIP_ACTION = 18
+    COL_THUMBNAIL = 19
 
     @classmethod
     def to_youtube_dict(cls, row_values):
         """Chuyển đổi dữ liệu sang định dạng tập trung vào Youtube"""
-        data = row_values + [""] * (19 - len(row_values))
+        data = row_values + [""] * (20 - len(row_values))
         return {
             "stt": data[cls.COL_STT],
             "id": data[cls.COL_ID],
             "name": data[cls.COL_NAME],
             "link_on_drive": data[cls.COL_LINK_ON_DRIVE],
             "category": data[cls.COL_CATEGORY],
+            "thumbnail": data[cls.COL_THUMBNAIL],
             "youtube": {
                 "channels": data[cls.COL_YOUTUBE_CHANNELS],
                 "channel_id": data[cls.COL_CHANNEL_ID],
@@ -51,13 +53,14 @@ class MediaCalendarModel:
     @classmethod
     def to_facebook_dict(cls, row_values):
         """Chuyển đổi dữ liệu sang định dạng tập trung vào Facebook"""
-        data = row_values + [""] * (19 - len(row_values))
+        data = row_values + [""] * (20 - len(row_values))
         return {
             "stt": data[cls.COL_STT],
             "id": data[cls.COL_ID],
             "name": data[cls.COL_NAME],
             "link_on_drive": data[cls.COL_LINK_ON_DRIVE],
             "category": data[cls.COL_CATEGORY],
+            "thumbnail": data[cls.COL_THUMBNAIL],
             "facebook": {
                 "pages": data[cls.COL_FACEBOOK_PAGES],
                 "page_id": data[cls.COL_PAGE_ID],
@@ -71,13 +74,14 @@ class MediaCalendarModel:
     @classmethod
     def to_tiktok_dict(cls, row_values):
         """Chuyển đổi dữ liệu sang định dạng tập trung vào Tiktok"""
-        data = row_values + [""] * (19 - len(row_values))
+        data = row_values + [""] * (20 - len(row_values))
         return {
             "stt": data[cls.COL_STT],
             "id": data[cls.COL_ID],
             "name": data[cls.COL_NAME],
             "link_on_drive": data[cls.COL_LINK_ON_DRIVE],
             "category": data[cls.COL_CATEGORY],
+            "thumbnail": data[cls.COL_THUMBNAIL],
             "tiktok": {
                 "accounts": data[cls.COL_TIKTOK_ACCOUNTS],
                 "account_id": data[cls.COL_ACCOUNT_ID],
@@ -91,7 +95,7 @@ class MediaCalendarModel:
     @classmethod
     def to_dict(cls, row_values):
         """Chuyển đổi toàn bộ dữ liệu trang tính sang Dictionary đầy đủ"""
-        data = row_values + [""] * (19 - len(row_values))
+        data = row_values + [""] * (20 - len(row_values))
         
         return {
             "stt": data[cls.COL_STT],
@@ -99,6 +103,7 @@ class MediaCalendarModel:
             "name": data[cls.COL_NAME],
             "link_on_drive": data[cls.COL_LINK_ON_DRIVE],
             "category": data[cls.COL_CATEGORY],
+            "thumbnail": data[cls.COL_THUMBNAIL],
             "youtube": {
                 "channels": data[cls.COL_YOUTUBE_CHANNELS],
                 "channel_id": data[cls.COL_CHANNEL_ID],
@@ -124,12 +129,13 @@ class MediaCalendarModel:
     @classmethod
     def from_dict(cls, data_dict):
         """Chuyển đổi một Dictionary ngược lại thành mảng để ghi xuống Sheets"""
-        row = [""] * 19
+        row = [""] * 20
         row[cls.COL_STT] = data_dict.get("stt", "")
         row[cls.COL_ID] = data_dict.get("id", "")
         row[cls.COL_NAME] = data_dict.get("name", "")
         row[cls.COL_LINK_ON_DRIVE] = data_dict.get("link_on_drive", "")
         row[cls.COL_CATEGORY] = data_dict.get("category", "")
+        row[cls.COL_THUMBNAIL] = data_dict.get("thumbnail", "")
         
         yt = data_dict.get("youtube", {})
         row[cls.COL_YOUTUBE_CHANNELS] = yt.get("channels", "")

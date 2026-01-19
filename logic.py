@@ -144,9 +144,9 @@ def background_upload(task_id, form_data, files_data):
         
         # Bước B: Tạo dữ liệu hàng cho từng Video
         for v_link in uploaded_links['videos']:
-            # Cấu trúc Media_Calendar: [STT, Id, Name, Link_on_drive, Category, ...]
-            # Padding lên 19 cột theo model
-            row = [next_stt, video_folder_id, folder_name, v_link, "Video"] + [""] * 14
+            # Cấu trúc Media_Calendar: [STT, Id, Name, Link_on_drive, Category, ..., Thumbnail]
+            # Padding lên 20 cột (Thumbnail ở index 19)
+            row = [next_stt, video_folder_id, folder_name, v_link, "Video"] + [""] * 14 + [uploaded_links['thumb']]
             all_new_rows.append(row)
             next_stt += 1
 
@@ -154,7 +154,7 @@ def background_upload(task_id, form_data, files_data):
         if uploaded_links['images']:
             # Nếu là hình ảnh sẽ là một mảng chứa nhiều link hình ảnh (JSON string)
             img_links_json = json.dumps(uploaded_links['images'])
-            row = [next_stt, image_folder_id, folder_name, img_links_json, "Images"] + [""] * 14
+            row = [next_stt, image_folder_id, folder_name, img_links_json, "Images"] + [""] * 14 + [uploaded_links['thumb']]
             all_new_rows.append(row)
             next_stt += 1
 
