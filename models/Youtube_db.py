@@ -29,12 +29,13 @@ class YoutubeDbModel:
     COL_POST_ID = 18
     COL_CURRENT_STATUS = 19
     COL_SCRIP_ACTION = 20
+    COL_THUMBNAIL_URL = 21
 
     @classmethod
     def to_dict(cls, row_values):
         """Chuyển đổi một hàng (mảng) từ Google Sheets sang dạng Dictionary"""
-        # Đảm bảo mảng đủ độ dài (21 cột)
-        data = row_values + [""] * (21 - len(row_values))
+        # Đảm bảo mảng đủ độ dài (22 cột)
+        data = row_values + [""] * (22 - len(row_values))
         
         return {
             "stt": data[cls.COL_STT],
@@ -48,6 +49,7 @@ class YoutubeDbModel:
             "product_hashtags": data[cls.COL_PRODUCT_HASHTAG],
             "brand_hashtags": data[cls.COL_BRAND_HASHTAG],
             "contact": data[cls.COL_CONTACT_ME],
+            "thumbnail_url": data[cls.COL_THUMBNAIL_URL],
             "channel": {
                 "name": data[cls.COL_CHANNEL_NAME],
                 "id": data[cls.COL_PAGE_ID],
@@ -65,7 +67,7 @@ class YoutubeDbModel:
     @classmethod
     def from_dict(cls, data_dict):
         """Chuyển đổi một Dictionary ngược lại thành mảng để ghi xuống Sheets"""
-        row = [""] * 21
+        row = [""] * 22
         row[cls.COL_STT] = data_dict.get("stt", "")
         row[cls.COL_ID_MEDIA_ON_DRIVE] = data_dict.get("media_drive_id", "")
         row[cls.COL_NAME_VIDEO] = data_dict.get("video_name", "")
@@ -77,6 +79,7 @@ class YoutubeDbModel:
         row[cls.COL_PRODUCT_HASHTAG] = data_dict.get("product_hashtags", "")
         row[cls.COL_BRAND_HASHTAG] = data_dict.get("brand_hashtags", "")
         row[cls.COL_CONTACT_ME] = data_dict.get("contact", "")
+        row[cls.COL_THUMBNAIL_URL] = data_dict.get("thumbnail_url", "")
         
         channel = data_dict.get("channel", {})
         row[cls.COL_CHANNEL_NAME] = channel.get("name", "")

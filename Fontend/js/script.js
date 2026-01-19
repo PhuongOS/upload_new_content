@@ -296,7 +296,7 @@ function renderCalendar(container, data) {
 
     // Header definition based on MediaCalendarModel
     const headers = [
-        "STT", "Thumbnail", "Chủ đề", "Category", "Youtube", "Facebook", "Tiktok", "Lịch Chung", "Hành động"
+        "STT", "Chủ đề", "Category", "Youtube", "Facebook", "Tiktok", "Lịch Chung", "Hành động"
     ];
 
     let html = `
@@ -317,9 +317,6 @@ function renderCalendar(container, data) {
         return `
             <tr>
                 <td>${item.stt}</td>
-                <td>
-                    ${item.thumbnail ? `<img src="${item.thumbnail.replace('/view?usp=drivesdk', '/thumbnail?sz=w100')}" class="table-thumb" onerror="this.src='https://via.placeholder.com/40?text=No+Img'">` : '<span class="text-muted">-</span>'}
-                </td>
                 <td class="name-cell" title="${item.name}">${item.name}</td>
                 <td>${item.category}</td>
                 <td>
