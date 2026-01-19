@@ -16,6 +16,10 @@ const userEmailSpan = document.getElementById('userEmail');
 const statusMessage = document.getElementById('statusMessage');
 const viewTitle = document.getElementById('view-title');
 
+// State for Media Calendar updates
+let currentCalendarData = [];
+let activeScheduleTarget = { stt: null, platform: null };
+
 // Sidebar Navigation Logic
 const navItems = document.querySelectorAll('.nav-item');
 const views = document.querySelectorAll('.view');
@@ -164,6 +168,7 @@ async function loadSheetData(sheetName) {
         const data = await res.json();
 
         if (sheetName === 'Media_Calendar') {
+            currentCalendarData = data; // Store globally for updates
             renderCalendar(container, data);
         } else {
             renderCards(container, data, sheetName);
@@ -181,13 +186,13 @@ function renderCards(container, data, sheetName) {
 
     const platform = sheetName === 'Facebook_db' ? 'facebook' : 'youtube';
 
-    container.innerHTML = data.map(item => `
+    container.innerHTML = data.map((item, index) => `
         <div class="content-card">
             <div class="card-header">
                 <div class="card-title" title="${item.Name_video || item.page?.name || 'No Name'}">
                     ${item.Name_video || item.page?.name || 'No Title'}
                 </div>
-                <div class="card-id">#${item.STT}</div>
+                <div class="card-id">#${item.STT || item.stt}</div>
             </div>
             
             <div class="card-body">
@@ -216,10 +221,10 @@ function renderCards(container, data, sheetName) {
             </div>
 
             <div class="card-actions">
-                <button class="btn-icon" onclick="openDriveLink('${item.Link_on_drive || ''}')" title="View on Drive">
+                <button class="btn-icon" onclick="openDriveLink('${item.Link_on_drive || item.link_on_drive || ''}')" title="View on Drive">
                     <i class="fas fa-external-link-alt"></i>
                 </button>
-                <button class="btn-icon delete" onclick="deleteRow('${sheetName}', ${item.STT})" title="Delete">
+                <button class="btn-icon delete" onclick="deleteRow('${sheetName}', ${index})" title="Delete">
                     <i class="fas fa-trash-alt"></i>
                 </button>
             </div>
@@ -252,7 +257,7 @@ function renderCalendar(container, data) {
             <tbody>
     `;
 
-    html += data.map(item => {
+    html += data.map((item, index) => {
         const yt = item.youtube || {};
         const fb = item.facebook || {};
         const tk = item.tiktok || {};
@@ -265,11 +270,17 @@ function renderCalendar(container, data) {
                 <td>
                     <div class="table-badge-group">
                         ${yt.calendar ? `<span class="badge badge-youtube" title="${yt.channels}">YT: ${yt.calendar}</span>` : '<span class="text-muted">-</span>'}
+                        <button class="btn-calendar-cell" onclick="openScheduleModal(${index}, 'youtube')">
+                            <i class="fas fa-calendar-alt"></i> Calendar
+                        </button>
                     </div>
                 </td>
                 <td>
                     <div class="table-badge-group">
                         ${fb.calendar ? `<span class="badge badge-facebook" title="${fb.pages}">FB: ${fb.calendar}</span>` : '<span class="text-muted">-</span>'}
+                        <button class="btn-calendar-cell" onclick="openScheduleModal(${index}, 'facebook')">
+                            <i class="fas fa-calendar-alt"></i> Calendar
+                        </button>
                     </div>
                 </td>
                 <td>
@@ -283,7 +294,7 @@ function renderCalendar(container, data) {
                         <button class="btn-icon" onclick="openDriveLink('${item.link_on_drive || ''}')" title="Xem trên Drive">
                             <i class="fas fa-external-link-alt"></i>
                         </button>
-                        <button class="btn-icon delete" onclick="deleteRow('Media_Calendar', ${item.stt})" title="Xóa">
+                        <button class="btn-icon delete" onclick="deleteRow('Media_Calendar', ${index})" title="Xóa">
                             <i class="fas fa-trash-alt"></i>
                         </button>
                     </div>
@@ -308,7 +319,7 @@ async function deleteRow(sheetName, stt) {
     if (!confirm(`Bạn có chắc muốn xóa hàng #${stt}?`)) return;
 
     try {
-        const res = await fetch(`/api/v2/sheets/${sheetName}?row_index=${stt}`, {
+        const res = await fetch(`/api/v2/sheets/${sheetName}/${stt}`, {
             method: 'DELETE'
         });
         const result = await res.json();
@@ -322,6 +333,85 @@ async function deleteRow(sheetName, stt) {
         alert('Lỗi hệ thống khi xóa.');
     }
 }
+
+// SCHEDULE MODAL LOGIC
+function openScheduleModal(index, platform) {
+    // Note: index is the 0-based data index
+    const item = currentCalendarData[index];
+    if (!item) return;
+
+    activeScheduleTarget = { index, platform };
+
+    document.getElementById('modal-item-name').textContent = item.name || 'Nội dung không tên';
+    document.getElementById('modal-platform-label').textContent = `Thời gian đăng (${platform.charAt(0).toUpperCase() + platform.slice(1)})`;
+
+    // Attempt to set current value if exists (format YYYY-MM-DDTHH:MM)
+    const currentVal = platform === 'facebook' ? (item.facebook?.calendar || "") : (item.youtube?.calendar || "");
+    const dateInput = document.getElementById('scheduleTimeInput');
+
+    // Simple heuristic to populate datetime input if it looks like ISO or similar
+    if (currentVal && currentVal.includes(':')) {
+        try {
+            // If it's already in a parsable format, try to set it. 
+            // Most spreadsheets might have custom formats though.
+            const date = new Date(currentVal);
+            if (!isNaN(date)) {
+                dateInput.value = date.toISOString().slice(0, 16);
+            }
+        } catch (e) { }
+    } else {
+        dateInput.value = "";
+    }
+
+    document.getElementById('scheduleModal').classList.add('visible');
+}
+
+function closeScheduleModal() {
+    document.getElementById('scheduleModal').classList.remove('visible');
+}
+
+document.getElementById('saveScheduleBtn').onclick = async () => {
+    const { index, platform } = activeScheduleTarget;
+    const nextTime = document.getElementById('scheduleTimeInput').value; // YYYY-MM-DDTHH:mm
+    if (!nextTime) return alert("Vui lòng chọn thời gian!");
+
+    const item = currentCalendarData[index];
+    if (!item) return;
+
+    // Update the specific platform calendar field
+    if (platform === 'facebook') {
+        if (!item.facebook) item.facebook = {};
+        item.facebook.calendar = nextTime.replace('T', ' ');
+    } else {
+        if (!item.youtube) item.youtube = {};
+        item.youtube.calendar = nextTime.replace('T', ' ');
+    }
+
+    const saveBtn = document.getElementById('saveScheduleBtn');
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Đang lưu...";
+
+    try {
+        const res = await fetch(`/api/v2/sheets/Media_Calendar/${index}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(item)
+        });
+
+        if (res.ok) {
+            closeScheduleModal();
+            loadSheetData('Media_Calendar'); // Refresh
+        } else {
+            const err = await res.json();
+            alert('Lỗi: ' + (err.message || "Không thể cập nhật"));
+        }
+    } catch (e) {
+        alert('Lỗi kết nối server.');
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Lưu lịch đăng";
+    }
+};
 
 authBtn.onclick = () => {
     window.location.href = '/api/auth/login';
