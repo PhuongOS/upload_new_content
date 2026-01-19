@@ -401,6 +401,9 @@ document.getElementById('saveScheduleBtn').onclick = async () => {
 
         if (res.ok) {
             closeScheduleModal();
+            // Sync to platform DB
+            const scheduleTime = nextTime.replace('T', ' ');
+            syncToPlatformDb(item, platform, scheduleTime);
             loadSheetData('Media_Calendar'); // Refresh
         } else {
             const err = await res.json();
@@ -413,6 +416,53 @@ document.getElementById('saveScheduleBtn').onclick = async () => {
         saveBtn.textContent = "Lưu lịch đăng";
     }
 };
+
+// SYNC LOGIC
+async function syncToPlatformDb(mediaItem, platform, scheduleTime) {
+    const sheetName = platform === 'facebook' ? 'Facebook_db' : 'Youtube_db';
+
+    // Build payload based on user requirements
+    const payload = {
+        stt: mediaItem.stt,
+        media_drive_id: mediaItem.id,
+        video_name: mediaItem.name,
+        video_url: mediaItem.link_on_drive,
+        content_type: 'Video',
+        calendar: scheduleTime
+    };
+
+    // If it's facebook, the model uses 'page' object and specific keys
+    if (platform === 'facebook') {
+        payload.page = {
+            name: mediaItem.facebook?.pages || "",
+            id: mediaItem.facebook?.page_id || ""
+        };
+    } else {
+        // Youtube model uses 'channel' object
+        payload.channel = {
+            name: mediaItem.youtube?.channels || "",
+            id: mediaItem.youtube?.channel_id || ""
+        };
+    }
+
+    try {
+        console.log(`Syncing to ${sheetName}...`, payload);
+        // We append for now as "set lịch" implies creating an entry in the target DB
+        const res = await fetch(`/api/v2/sheets/${sheetName}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            console.log(`Successfully synced to ${sheetName}`);
+        } else {
+            console.error(`Failed to sync to ${sheetName}`);
+        }
+    } catch (err) {
+        console.error(`Error syncing to ${sheetName}:`, err);
+    }
+}
 
 // CONFIRM MODAL LOGIC
 function showConfirmModal(message) {
