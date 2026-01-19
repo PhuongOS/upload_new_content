@@ -1,3 +1,4 @@
+from flasgger import Swagger
 from flask import Flask, request, jsonify, send_from_directory, redirect
 import os
 import json
@@ -8,6 +9,7 @@ from googleapiclient.http import MediaFileUpload
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__, static_url_path='', static_folder='.')
+swagger = Swagger(app)
 
 # CONSTANTS
 PORT = 3000
@@ -54,6 +56,13 @@ def send_static(path):
 
 @app.route('/api/auth/login')
 def login():
+    """
+    Initiate Google OAuth login flow.
+    ---
+    responses:
+      302:
+        description: Redirect to Google Auth or Home
+    """
     try:
         get_creds()
         return redirect('/')
@@ -62,6 +71,13 @@ def login():
 
 @app.route('/api/auth/status')
 def auth_status():
+    """
+    Check if the user is authenticated with Google.
+    ---
+    responses:
+      200:
+        description: Authentication status and user email
+    """
     if os.path.exists(TOKEN_FILE):
         try:
             creds = get_creds()
@@ -84,6 +100,266 @@ tasks = {}
 @app.route('/api/tasks')
 def get_tasks():
     return jsonify(tasks)
+
+@app.route('/api/sheets/full-data')
+def get_full_sheet_data():
+    """
+    Fetch all data from every tab in a Google Spreadsheet.
+    ---
+    parameters:
+      - name: sheetId
+        in: query
+        type: string
+        required: true
+        description: The ID of the Google Spreadsheet
+    responses:
+      200:
+        description: Success - Returns title and data for all sheets
+      400:
+        description: Missing sheetId
+      500:
+        description: Server error
+    """
+    sheet_id = request.args.get('sheetId')
+    if not sheet_id:
+        return jsonify({"error": "Missing sheetId parameter"}), 400
+    
+    try:
+        creds = get_creds()
+        service = build('sheets', 'v4', credentials=creds)
+        
+        # 1. Get Spreadsheet metadata to find all sheet names
+        spreadsheet = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
+        sheets_metadata = spreadsheet.get('sheets', [])
+        
+        full_data = {
+            "title": spreadsheet.get('properties', {}).get('title', 'Unknown'),
+            "sheets": []
+        }
+        
+        # 2. Fetch data for each sheet
+        for sheet in sheets_metadata:
+            props = sheet.get('properties', {})
+            title = props.get('title')
+            sheet_id_val = props.get('sheetId')
+            
+            result = service.spreadsheets().values().get(
+                spreadsheetId=sheet_id, 
+                range=title
+            ).execute()
+            
+            full_data["sheets"].append({
+                "title": title,
+                "sheetId": sheet_id_val,
+                "values": result.get('values', [])
+            })
+            
+        return jsonify(full_data)
+        
+    except Exception as e:
+        print(f"Error fetching sheet data: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/sheets/single-data')
+def get_single_sheet_data():
+    """
+    Fetch data from a specific tab (sheet name) in a Google Spreadsheet.
+    ---
+    parameters:
+      - name: sheetId
+        in: query
+        type: string
+        required: true
+        description: The ID of the Google Spreadsheet
+      - name: sheetName
+        in: query
+        type: string
+        required: true
+        description: The name/title of the tab (e.g., 'Sheet1')
+    responses:
+      200:
+        description: Success - Returns data for the specified sheet
+      400:
+        description: Missing parameters
+      500:
+        description: Server error
+    """
+    sheet_id = request.args.get('sheetId')
+    sheet_name = request.args.get('sheetName')
+    
+    if not sheet_id or not sheet_name:
+        return jsonify({"error": "Missing sheetId or sheetName parameter"}), 400
+    
+    try:
+        creds = get_creds()
+        service = build('sheets', 'v4', credentials=creds)
+        
+        result = service.spreadsheets().values().get(
+            spreadsheetId=sheet_id, 
+            range=sheet_name
+        ).execute()
+        
+        return jsonify({
+            "sheetName": sheet_name,
+            "values": result.get('values', [])
+        })
+        
+    except Exception as e:
+        print(f"Error fetching single sheet data: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/sheets/tabs', methods=['POST'])
+def create_sheet_tab():
+    """
+    Create a new tab in the spreadsheet.
+    ---
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          properties:
+            sheetId:
+              type: string
+            title:
+              type: string
+    responses:
+      200:
+        description: Tab created successfully
+    """
+    data = request.json
+    sheet_id = data.get('sheetId')
+    title = data.get('title')
+    
+    try:
+        creds = get_creds()
+        service = build('sheets', 'v4', credentials=creds)
+        body = {'requests': [{'addSheet': {'properties': {'title': title}}}]}
+        res = service.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=body).execute()
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/sheets/tabs', methods=['DELETE'])
+def delete_sheet_tab():
+    """
+    Delete a tab from the spreadsheet.
+    ---
+    parameters:
+      - name: sheetId
+        in: query
+        type: string
+        required: true
+      - name: tabId
+        in: query
+        type: integer
+        required: true
+    responses:
+      200:
+        description: Tab deleted successfully
+    """
+    sheet_id = request.args.get('sheetId')
+    tab_id = request.args.get('tabId', type=int)
+    
+    try:
+        creds = get_creds()
+        service = build('sheets', 'v4', credentials=creds)
+        body = {'requests': [{'deleteSheet': {'sheetId': tab_id}}]}
+        res = service.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=body).execute()
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/sheets/rows', methods=['PUT'])
+def update_sheet_row():
+    """
+    Update a specific row in a spreadsheet.
+    ---
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          properties:
+            sheetId:
+              type: string
+            sheetName:
+              type: string
+            rowIndex:
+              type: integer
+            values:
+              type: array
+              items:
+                type: string
+    responses:
+      200:
+        description: Row updated successfully
+    """
+    data = request.json
+    sheet_id = data.get('sheetId')
+    sheet_name = data.get('sheetName')
+    row_index = data.get('rowIndex') # 0-indexed
+    values = data.get('values')
+    
+    try:
+        creds = get_creds()
+        service = build('sheets', 'v4', credentials=creds)
+        range_name = f"{sheet_name}!A{row_index + 1}"
+        res = service.spreadsheets().values().update(
+            spreadsheetId=sheet_id,
+            range=range_name,
+            valueInputOption='USER_ENTERED',
+            body={'values': [values]}
+        ).execute()
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/sheets/rows', methods=['DELETE'])
+def delete_sheet_row():
+    """
+    Delete a specific row from a spreadsheet.
+    ---
+    parameters:
+      - name: sheetId
+        in: query
+        type: string
+        required: true
+      - name: tabId
+        in: query
+        type: integer
+        required: true
+      - name: rowIndex
+        in: query
+        type: integer
+        required: true
+    responses:
+      200:
+        description: Row deleted successfully
+    """
+    sheet_id = request.args.get('sheetId')
+    tab_id = request.args.get('tabId', type=int)
+    row_index = request.args.get('rowIndex', type=int)
+    
+    try:
+        creds = get_creds()
+        service = build('sheets', 'v4', credentials=creds)
+        body = {
+            'requests': [{
+                'deleteDimension': {
+                    'range': {
+                        'sheetId': tab_id,
+                        'dimension': 'ROWS',
+                        'startIndex': row_index,
+                        'endIndex': row_index + 1
+                    }
+                }
+            }]
+        }
+        res = service.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=body).execute()
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 def background_upload(task_id, form_data, files_data):
     try:
@@ -257,5 +533,7 @@ def upload_files():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':
-    print(f"Backend Server running on http://localhost:{PORT}")
-    app.run(port=PORT, debug=True)
+    # Use environment variables for port to support various deployment platforms
+    run_port = int(os.environ.get("PORT", PORT))
+    print(f"Backend Server running on http://0.0.0.0:{run_port}")
+    app.run(host='0.0.0.0', port=run_port, debug=False)

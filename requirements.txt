@@ -3,4 +3,6 @@ google-auth-oauthlib
 google-auth-httplib2
 flask
 werkzeug
+gunicorn
+flasgger
 
