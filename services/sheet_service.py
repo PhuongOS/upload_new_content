@@ -2,6 +2,8 @@ from googleapiclient.discovery import build
 from models.media_calendar import MediaCalendarModel
 from models.Facebook_db import FacebookDbModel
 from models.Youtube_db import YoutubeDbModel
+from models.Facebook_Config import FacebookConfModel
+from models.Youtube_Config import YoutubeConfModel
 from logic import get_creds
 
 class SheetService:
@@ -11,7 +13,9 @@ class SheetService:
         models = {
             "Media_Calendar": MediaCalendarModel,
             "Facebook_db": FacebookDbModel,
-            "Youtube_db": YoutubeDbModel
+            "Youtube_db": YoutubeDbModel,
+            "Facebook_Config": FacebookConfModel,
+            "Youtube_Config": YoutubeConfModel
         }
         return models.get(name)
 
