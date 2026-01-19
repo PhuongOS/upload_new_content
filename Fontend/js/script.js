@@ -251,6 +251,18 @@ function renderCards(container, data, sheetName) {
                     </div>
                     
                     <div class="card-info-item">
+                        <i class="fas fa-file-alt"></i>
+                        <div style="flex:1">
+                            <span style="display:block; font-size: 11px; opacity: 0.6; margin-bottom: 2px;">Loại bài đăng:</span>
+                            <select class="card-select" onchange="updateCardField('${sheetName}', ${index}, { field: 'post_type', value: this.value })">
+                                ${platform === 'facebook'
+                ? ['Image', 'Text', 'Video', 'Reels'].map(opt => `<option value="${opt}" ${item.post_type === opt ? 'selected' : ''}>${opt}</option>`).join('')
+                : `<option value="Video" selected>Video</option>`}
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="card-info-item">
                         <i class="fas fa-clock"></i>
                         <span>Schedule: ${item.calendar || item.Calendar || 'N/A'}</span>
                     </div>
@@ -372,6 +384,8 @@ async function updateCardField(sheetName, index, fieldData) {
             row.channel.id = fieldData.id;
             row.channel.name = fieldData.name;
             row.channel.gmail = fieldData.gmail;
+        } else if (fieldData.field === 'post_type') {
+            row.post_type = fieldData.value;
         }
 
         const res = await fetch(`/api/v2/sheets/${sheetName}/${index}`, {

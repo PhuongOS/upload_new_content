@@ -120,36 +120,49 @@ def background_upload(task_id, form_data, files_data):
             else:
                 uploaded_links['images'].append(link)
 
-        # CẬP NHẬT DỮ LIỆU VÀO GOOGLE SHEETS
-        tasks[task_id]["progress"] = "Đang cập nhật link vào Google Sheets..."
+        # CẬP NHẬT DỮ LIỆU VÀO GOOGLE SHEETS (Media_Calendar)
+        tasks[task_id]["progress"] = "Đang cập nhật link vào Media Calendar..."
         
-        # Bước A: Lấy số lượng hàng hiện tại để tính STT (Số thứ tự) tiếp theo
-        res = sheet_service.spreadsheets().values().get(spreadsheetId=sheet_id, range='Content!A:A').execute()
-        current_rows_count = len(res.get('values', []))
+        # Sử dụng ID bảng tính từ yêu cầu của người dùng nếu có, hoặc dùng từ form
+        TARGET_SHEET_ID = "1zFzHePIcOHXiWyAQRN7YOxIkE3kpDKwCuKMsdEe-snU"
+        target_id = TARGET_SHEET_ID if TARGET_SHEET_ID else sheet_id
+        
+        # Bước A: Lấy số lượng hàng hiện tại để tính STT
+        try:
+            res = sheet_service.spreadsheets().values().get(spreadsheetId=target_id, range='Media_Calendar!A:A').execute()
+            current_rows_count = len(res.get('values', []))
+        except:
+            current_rows_count = 0
+            
         next_stt = current_rows_count if current_rows_count > 0 else 1
 
         all_new_rows = []
-        thumb_link = uploaded_links['thumb']
-
-        # Bước B: Tạo dữ liệu hàng cho từng Video (mỗi video một hàng riêng)
+        
+        # ID của nội dung đã upload lên drive (Dùng Folder ID của Video hoặc Image tùy nội dung)
+        # Người dùng yêu cầu Id => Id của nội dung đã upload lên drive
+        # Chúng ta sẽ dùng folder_id tổng quát hơn hoặc video_folder_id/image_folder_id tùy hàng
+        
+        # Bước B: Tạo dữ liệu hàng cho từng Video
         for v_link in uploaded_links['videos']:
-            # Cấu trúc: [STT, ..., Status, ..., Chủ đề, ..., Video Link, Thumb Link, Image Link]
-            row = [next_stt, "", "", "Chờ Đăng", "", "Có", "", folder_name, "", "", "", "", v_link, thumb_link, ""]
+            # Cấu trúc Media_Calendar: [STT, Id, Name, Link_on_drive, Category, ...]
+            # Padding lên 19 cột theo model
+            row = [next_stt, video_folder_id, folder_name, v_link, "Video"] + [""] * 14
             all_new_rows.append(row)
             next_stt += 1
 
-        # Bước C: Tạo dữ liệu hàng cho mảng Ảnh (tất cả ảnh chung một hàng, trải ngang)
+        # Bước C: Tạo dữ liệu hàng cho mảng Ảnh
         if uploaded_links['images']:
-            img_links = uploaded_links['images'][:9] # Giới hạn tối đa 9 ảnh theo cấu trúc sheet
-            row = [next_stt, "", "", "Chờ Đăng", "", "Có", "", folder_name, "", "", "", "", "", thumb_link, *img_links]
+            # Nếu là hình ảnh sẽ là một mảng chứa nhiều link hình ảnh (JSON string)
+            img_links_json = json.dumps(uploaded_links['images'])
+            row = [next_stt, image_folder_id, folder_name, img_links_json, "Images"] + [""] * 14
             all_new_rows.append(row)
             next_stt += 1
 
-        # Bước D: Ghi toàn bộ hàng mới xuống Sheet cùng một lúc (append)
+        # Bước D: Ghi toàn bộ hàng mới xuống Sheet (Media_Calendar)
         if all_new_rows:
             sheet_service.spreadsheets().values().append(
-                spreadsheetId=sheet_id,
-                range='Content!A:A',
+                spreadsheetId=target_id,
+                range='Media_Calendar!A:A',
                 valueInputOption='USER_ENTERED',
                 body={"values": all_new_rows}
             ).execute()
