@@ -509,57 +509,121 @@ document.getElementById('saveScheduleBtn').onclick = async () => {
     }
 };
 
-// SYNC LOGIC
-async function syncToPlatformDb(mediaItem, platform, scheduleTime) {
-    const sheetName = platform === 'facebook' ? 'Facebook_db' : 'Youtube_db';
+async function revokeSchedule() {
+    const { index, platform } = activeScheduleTarget;
+    const item = currentCalendarData[index];
+    if (!item) return;
 
-    // Build payload based on user requirements
-    const payload = {
-        stt: mediaItem.stt,
-        media_drive_id: mediaItem.id,
-        video_name: mediaItem.name,
-        video_url: mediaItem.link_on_drive,
-        thumbnail_url: mediaItem.thumbnail || "",
-        content_type: 'Video',
-        calendar: scheduleTime
-    };
+    const confirmed = await showConfirmModal("Bạn có chắc chắn muốn thu hồi lịch đăng này không? Hàng tương ứng ở bảng đồng bộ sẽ bị xóa.");
+    if (!confirmed) return;
 
-    // If it's facebook, the model uses 'page' object and specific keys
-    if (platform === 'facebook') {
-        const pageId = mediaItem.facebook?.page_id || "";
-        const config = facebookConfigs.find(c => c.page_id === pageId);
-        payload.page = {
-            name: mediaItem.facebook?.pages || "",
-            id: pageId,
-            access_token: config ? config.access_token : ""
-        };
-    } else {
-        // Youtube model uses 'channel' object
-        const channelId = mediaItem.youtube?.channel_id || "";
-        const config = youtubeConfigs.find(c => c.channel_id === channelId);
-        payload.channel = {
-            name: mediaItem.youtube?.channels || "",
-            id: channelId,
-            gmail: config ? config.gmail_channel : ""
-        };
-    }
+    const revokeBtn = document.getElementById('revokeScheduleBtn');
+    revokeBtn.disabled = true;
+    revokeBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Đang thu hồi...';
 
     try {
-        console.log(`Syncing to ${sheetName}...`, payload);
-        // We append for now as "set lịch" implies creating an entry in the target DB
-        const res = await fetch(`/api/v2/sheets/${sheetName}`, {
-            method: 'POST',
+        // 1. Clear calendar field in Media_Calendar
+        if (platform === 'facebook') {
+            if (!item.facebook) item.facebook = {};
+            item.facebook.calendar = "";
+        } else {
+            if (!item.youtube) item.youtube = {};
+            item.youtube.calendar = "";
+        }
+
+        const res = await fetch(`/api/v2/sheets/Media_Calendar/${index}`, {
+            method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(item)
         });
 
         if (res.ok) {
-            console.log(`Successfully synced to ${sheetName}`);
+            // 2. Delete from platform DB
+            await syncToPlatformDb(item, platform, "", true);
+            closeScheduleModal();
+            loadSheetData('Media_Calendar');
         } else {
-            console.error(`Failed to sync to ${sheetName}`);
+            alert("Lỗi khi thu hồi lịch.");
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Lỗi hệ thống.");
+    } finally {
+        revokeBtn.disabled = false;
+        revokeBtn.innerHTML = '<i class="fas fa-undo"></i> Thu hồi lịch';
+    }
+}
+
+// SYNC LOGIC (Upsert/Delete)
+async function syncToPlatformDb(mediaItem, platform, scheduleTime, isRevoke = false) {
+    const sheetName = platform === 'facebook' ? 'Facebook_db' : 'Youtube_db';
+    const driveIdField = 'media_drive_id';
+    const targetDriveId = mediaItem.id;
+
+    try {
+        // 1. Fetch current data to check for duplicates
+        const listRes = await fetch(`/api/v2/sheets/${sheetName}`);
+        const listData = await listRes.json();
+
+        // Find existing row with matching Drive ID
+        const existingIdx = listData.findIndex(row => row[driveIdField] === targetDriveId);
+
+        if (isRevoke) {
+            if (existingIdx !== -1) {
+                console.log(`Sync: Revoking - Deleting row ${existingIdx} in ${sheetName}`);
+                await fetch(`/api/v2/sheets/${sheetName}/${existingIdx}`, { method: 'DELETE' });
+            }
+            return;
+        }
+
+        // Build payload
+        const payload = {
+            stt: mediaItem.stt,
+            media_drive_id: targetDriveId,
+            video_name: mediaItem.name,
+            video_url: mediaItem.link_on_drive,
+            thumbnail_url: mediaItem.thumbnail || "",
+            content_type: 'Video',
+            calendar: scheduleTime
+        };
+
+        if (platform === 'facebook') {
+            const pageId = mediaItem.facebook?.page_id || "";
+            const config = facebookConfigs.find(c => c.page_id === pageId);
+            payload.page = {
+                name: mediaItem.facebook?.pages || "",
+                id: pageId,
+                access_token: config ? config.access_token : ""
+            };
+        } else {
+            const channelId = mediaItem.youtube?.channel_id || "";
+            const config = youtubeConfigs.find(c => c.channel_id === channelId);
+            payload.channel = {
+                name: mediaItem.youtube?.channels || "",
+                id: channelId,
+                gmail: config ? config.gmail_channel : ""
+            };
+        }
+
+        if (existingIdx !== -1) {
+            // Update mode
+            console.log(`Sync: Updating existing row at ${existingIdx} in ${sheetName}`);
+            await fetch(`/api/v2/sheets/${sheetName}/${existingIdx}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        } else {
+            // Append mode
+            console.log(`Sync: Appending new row to ${sheetName}`);
+            await fetch(`/api/v2/sheets/${sheetName}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
         }
     } catch (err) {
-        console.error(`Error syncing to ${sheetName}:`, err);
+        console.error(`Sync to ${sheetName} failed:`, err);
     }
 }
 
