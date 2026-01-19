@@ -28,7 +28,37 @@ window.onload = () => {
     checkBackendAuth();
     // Start tracking existing tasks if any
     pollTasks();
+
+    // Auto-parse URL in Sheet ID field
+    sheetIdInput.oninput = (e) => {
+        const val = e.target.value.trim();
+        if (val.includes('/spreadsheets/d/')) {
+            const { sheetId, tabId } = parseSheetUrl(val);
+            if (sheetId) {
+                e.target.value = sheetId;
+                localStorage.setItem('sheetId', sheetId);
+                console.log(`Auto-detected Sheet ID: ${sheetId}, Tab ID: ${tabId}`);
+                // Highlight to user that ID was extracted
+                statusMessage.innerText = `Auto-parsed ID from URL (Tab ID: ${tabId})`;
+                statusMessage.className = 'status-msg success';
+            }
+        } else {
+            localStorage.setItem('sheetId', val);
+        }
+    };
 };
+
+/**
+ * Extract sheetId and tabId from a Google Sheets URL
+ */
+function parseSheetUrl(url) {
+    const sheetIdMatch = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+    const gidMatch = url.match(/[#&]gid=([0-9]+)/);
+    return {
+        sheetId: sheetIdMatch ? sheetIdMatch[1] : null,
+        tabId: gidMatch ? gidMatch[1] : "0"
+    };
+}
 
 async function pollTasks() {
     setInterval(async () => {
