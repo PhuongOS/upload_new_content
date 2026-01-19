@@ -4,7 +4,7 @@ from flasgger import Swagger
 from routes import api_bp
 
 # Khởi tạo ứng dựng Flask
-app = Flask(__name__, static_url_path='', static_folder='.')
+app = Flask(__name__, static_url_path='', static_folder='Fontend')
 # Cấu hình Swagger để tự động tạo tài liệu API
 swagger = Swagger(app)
 
@@ -15,13 +15,13 @@ app.register_blueprint(api_bp)
 
 @app.route('/')
 def root():
-    """Trả về trang chủ index.html"""
-    return send_from_directory('.', 'index.html')
+    """Trả về trang chủ index.html từ thư mục Fontend"""
+    return send_from_directory('Fontend', 'index.html')
 
 @app.route('/<path:path>')
 def send_static(path):
-    """Phục vụ các file tĩnh như CSS, JS, ảnh"""
-    return send_from_directory('.', path)
+    """Phục vụ các file tĩnh như CSS, JS, ảnh từ thư mục Fontend"""
+    return send_from_directory('Fontend', path)
 
 if __name__ == '__main__':
     # Lấy PORT từ môi trường hoặc mặc định là 3000
