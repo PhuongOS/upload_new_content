@@ -213,7 +213,7 @@ function renderCards(container, data, sheetName) {
                 <option value="">-- Chọn ${platform === 'facebook' ? 'Page' : 'Kênh'} --</option>
                 ${configs.map(c => {
             const id = platform === 'facebook' ? c.page_id : c.channel_id;
-            const name = platform === 'facebook' ? `${c.page_name} : ${c.page_id}` : `${c.channel_name} : ${c.channel_id}`;
+            const name = platform === 'facebook' ? c.page_name : c.channel_name;
             return `<option title="${id}" value="${id}" ${id === currentVal ? 'selected' : ''}>${name}</option>`;
         }).join('')}
             </select>
