@@ -18,7 +18,7 @@ const viewTitle = document.getElementById('view-title');
 
 // State for Media Calendar updates
 let currentCalendarData = [];
-let activeScheduleTarget = { stt: null, platform: null };
+let activeScheduleTarget = { index: null, platform: null };
 
 // Sidebar Navigation Logic
 const navItems = document.querySelectorAll('.nav-item');
@@ -316,7 +316,8 @@ function openDriveLink(link) {
 }
 
 async function deleteRow(sheetName, stt) {
-    if (!confirm(`Bạn có chắc muốn xóa hàng #${stt}?`)) return;
+    const confirmed = await showConfirmModal(`Bạn có chắc muốn xóa bài đăng #${stt}?`);
+    if (!confirmed) return;
 
     try {
         const res = await fetch(`/api/v2/sheets/${sheetName}/${stt}`, {
@@ -412,6 +413,30 @@ document.getElementById('saveScheduleBtn').onclick = async () => {
         saveBtn.textContent = "Lưu lịch đăng";
     }
 };
+
+// CONFIRM MODAL LOGIC
+function showConfirmModal(message) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('confirmModal');
+        const messageEl = document.getElementById('confirmModalMessage');
+        const okBtn = document.getElementById('confirmOkBtn');
+        const cancelBtn = document.getElementById('confirmCancelBtn');
+
+        messageEl.textContent = message;
+        modal.classList.add('visible');
+
+        const handleResponse = (result) => {
+            modal.classList.remove('visible');
+            resolve(result);
+            // Cleanup listeners
+            okBtn.onclick = null;
+            cancelBtn.onclick = null;
+        };
+
+        okBtn.onclick = () => handleResponse(true);
+        cancelBtn.onclick = () => handleResponse(false);
+    });
+}
 
 authBtn.onclick = () => {
     window.location.href = '/api/auth/login';
@@ -592,7 +617,8 @@ async function addConfigAccount(evt, sheetName) {
 }
 
 async function deleteConfigRow(sheetName, stt) {
-    if (!confirm(`Bạn có chắc muốn xóa cấu hình #${stt}?`)) return;
+    const confirmed = await showConfirmModal(`Bạn có chắc muốn xóa cấu hình #${stt}?`);
+    if (!confirmed) return;
 
     try {
         const res = await fetch(`/api/v2/sheets/${sheetName}?row_index=${stt}`, {
