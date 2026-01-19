@@ -16,6 +16,10 @@ const userEmailSpan = document.getElementById('userEmail');
 const statusMessage = document.getElementById('statusMessage');
 const viewTitle = document.getElementById('view-title');
 
+// Edit state for configurations
+let editingConfigIndex = null;
+let currentConfigSheet = null;
+
 // State for Media Calendar updates
 let currentCalendarData = [];
 let activeScheduleTarget = { index: null, platform: null };
@@ -209,12 +213,13 @@ function renderCards(container, data, sheetName) {
         const currentVal = platform === 'facebook' ? (item.page?.id || "") : (item.channel?.id || "");
 
         const dropdownHtml = `
-            <select class="card-select" onchange="updateCardField('${sheetName}', ${index}, { platform: '${platform}', id: this.value, name: this.options[this.selectedIndex].text })">
+            <select class="card-select" onchange="updateCardField('${sheetName}', ${index}, { platform: '${platform}', id: this.value, name: this.options[this.selectedIndex].text, gmail: this.options[this.selectedIndex].getAttribute('data-gmail') || '' })">
                 <option value="">-- Chọn ${platform === 'facebook' ? 'Page' : 'Kênh'} --</option>
                 ${configs.map(c => {
             const id = platform === 'facebook' ? c.page_id : c.channel_id;
             const name = platform === 'facebook' ? c.page_name : c.channel_name;
-            return `<option title="${id}" value="${id}" ${id === currentVal ? 'selected' : ''}>${name}</option>`;
+            const gmail = platform === 'youtube' ? (c.gmail_channel || '') : '';
+            return `<option title="${id}" value="${id}" data-gmail="${gmail}" ${id === currentVal ? 'selected' : ''}>${name}</option>`;
         }).join('')}
             </select>
         `;
@@ -241,6 +246,7 @@ function renderCards(container, data, sheetName) {
                                 ${platform === 'facebook' ? 'Page Selection (Name : ID)' : 'Channel Selection (Name : ID)'}:
                             </span>
                             ${dropdownHtml}
+                            ${platform === 'youtube' && item.channel?.gmail ? `<span style="display:block; font-size: 11px; opacity: 0.6; margin-top: 4px; color: var(--accent);">Gmail: ${item.channel.gmail}</span>` : ''}
                         </div>
                     </div>
                     
@@ -358,10 +364,14 @@ async function updateCardField(sheetName, index, fieldData) {
             if (!row.page) row.page = {};
             row.page.id = fieldData.id;
             row.page.name = fieldData.name;
+            // Sync Access Token from config
+            const config = facebookConfigs.find(c => c.page_id === fieldData.id);
+            if (config) row.page.access_token = config.access_token;
         } else if (fieldData.platform === 'youtube') {
             if (!row.channel) row.channel = {};
             row.channel.id = fieldData.id;
             row.channel.name = fieldData.name;
+            row.channel.gmail = fieldData.gmail;
         }
 
         const res = await fetch(`/api/v2/sheets/${sheetName}/${index}`, {
@@ -501,15 +511,21 @@ async function syncToPlatformDb(mediaItem, platform, scheduleTime) {
 
     // If it's facebook, the model uses 'page' object and specific keys
     if (platform === 'facebook') {
+        const pageId = mediaItem.facebook?.page_id || "";
+        const config = facebookConfigs.find(c => c.page_id === pageId);
         payload.page = {
             name: mediaItem.facebook?.pages || "",
-            id: mediaItem.facebook?.page_id || ""
+            id: pageId,
+            access_token: config ? config.access_token : ""
         };
     } else {
         // Youtube model uses 'channel' object
+        const channelId = mediaItem.youtube?.channel_id || "";
+        const config = youtubeConfigs.find(c => c.channel_id === channelId);
         payload.channel = {
             name: mediaItem.youtube?.channels || "",
-            id: mediaItem.youtube?.channel_id || ""
+            id: channelId,
+            gmail: config ? config.gmail_channel : ""
         };
     }
 
@@ -635,6 +651,18 @@ configTabBtns.forEach(btn => {
         // Active content
         configTabContents.forEach(c => c.classList.remove('active'));
         document.getElementById(target).classList.add('active');
+
+        // Reset edit state
+        editingConfigIndex = null;
+        currentConfigSheet = null;
+        const formBtn = document.querySelector(`#${target} .btn-primary`);
+        if (formBtn) {
+            const prefix = target === 'facebook-config' ? 'fb' : 'yt';
+            formBtn.innerHTML = `<i class="fas fa-plus"></i> Thêm ${target === 'facebook-config' ? 'tài khoản' : 'kênh'}`;
+            document.getElementById(`${prefix}-config-name`).value = '';
+            document.getElementById(`${prefix}-config-id`).value = '';
+            document.getElementById(`${prefix}-config-token`).value = '';
+        }
     });
 });
 
@@ -664,22 +692,49 @@ function renderConfigList(container, data, sheetName) {
         return;
     }
 
-    container.innerHTML = data.map(item => `
-        <div class="config-item">
-            <div class="config-item-info">
-                <div class="config-item-name">
-                    <i class="fas fa-check-circle" style="color: var(--accent); margin-right: 8px;"></i>
-                    ${item.Name || item.name || 'No Name'}
+    container.innerHTML = data.map((item, idx) => {
+        const name = item.Name || item.name || item.page_name || item.channel_name || 'No Name';
+        const id = item.Id || item.id || item.page_id || item.channel_id || 'N/A';
+        const stt = item.STT || item.stt || (idx + 1);
+        const extraInfo = sheetName === 'Facebook_Config' ? (item.Token || item.access_token || '') : (item.Gmail || item.gmail_channel || '');
+
+        return `
+            <div class="config-item">
+                <div class="config-item-info">
+                    <div class="config-item-name">
+                        <i class="fas fa-check-circle" style="color: var(--accent); margin-right: 8px;"></i>
+                        ${name}
+                    </div>
+                    <div class="config-item-id">ID: ${id}</div>
+                    ${extraInfo ? `<div class="config-item-id" style="font-size: 11px; opacity: 0.7;">${sheetName === 'Facebook_Config' ? 'Token: ' + (extraInfo.substring(0, 10) + '...') : 'Email: ' + extraInfo}</div>` : ''}
                 </div>
-                <div class="config-item-id">ID: ${item.Id || item.id || 'N/A'}</div>
+                <div class="config-item-actions">
+                    <button class="btn-icon" onclick="editConfigRow('${sheetName}', ${JSON.stringify(item).replace(/"/g, '&quot;')}, ${stt})" title="Sửa">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="btn-icon btn-icon-danger" onclick="deleteConfigRow('${sheetName}', ${stt})" title="Xóa">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                </div>
             </div>
-            <div class="config-item-actions">
-                <button class="btn-icon btn-icon-danger" onclick="deleteConfigRow('${sheetName}', ${item.STT || item.stt})" title="Xóa">
-                    <i class="fas fa-trash-alt"></i>
-                </button>
-            </div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
+}
+
+function editConfigRow(sheetName, item, stt) {
+    editingConfigIndex = stt;
+    currentConfigSheet = sheetName;
+    const prefix = sheetName === 'Facebook_Config' ? 'fb' : 'yt';
+
+    document.getElementById(`${prefix}-config-name`).value = item.Name || item.name || item.page_name || item.channel_name || '';
+    document.getElementById(`${prefix}-config-id`).value = item.Id || item.id || item.page_id || item.channel_id || '';
+    document.getElementById(`${prefix}-config-token`).value = item.Token || item.token || item.access_token || item.gmail_channel || '';
+
+    const btn = document.querySelector(`.config-tab-content#${sheetName === 'Facebook_Config' ? 'facebook-config' : 'youtube-config'} .btn-primary`);
+    if (btn) {
+        btn.innerHTML = '<i class="fas fa-save"></i> Cập nhật cấu hình';
+        btn.onclick = (e) => addConfigAccount(e, sheetName); // Re-bind to ensure it uses the updated stt
+    }
 }
 
 async function addConfigAccount(evt, sheetName) {
@@ -695,21 +750,30 @@ async function addConfigAccount(evt, sheetName) {
     if (!name || !id) return alert("Vui lòng nhập Tên và ID!");
 
     // Construct data based on model
-    const payload = {
-        'STT': 0, // Backend handles list append
-        'Name': name,
-        'Id': id,
-        'Token': token
-    };
+    const payload = {};
+    if (sheetName === 'Facebook_Config') {
+        payload.page_name = name;
+        payload.page_id = id;
+        payload.access_token = token;
+    } else {
+        payload.channel_name = name;
+        payload.channel_id = id;
+        payload.gmail_channel = token;
+    }
 
     try {
         const btn = evt.target.closest('button');
         const originalText = btn.innerHTML;
         btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Đang thêm...';
+        btn.innerHTML = `<i class="fas fa-circle-notch fa-spin"></i> ${editingConfigIndex !== null ? 'Đang cập nhật...' : 'Đang thêm...'}`;
 
-        const res = await fetch(`/api/v2/sheets/${sheetName}`, {
-            method: 'POST',
+        const url = editingConfigIndex !== null
+            ? `/api/v2/sheets/${sheetName}/${editingConfigIndex}`
+            : `/api/v2/sheets/${sheetName}`;
+        const method = editingConfigIndex !== null ? 'PUT' : 'POST';
+
+        const res = await fetch(url, {
+            method: method,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
@@ -718,18 +782,20 @@ async function addConfigAccount(evt, sheetName) {
             nameInput.value = '';
             idInput.value = '';
             tokenInput.value = '';
+            editingConfigIndex = null;
+            btn.innerHTML = `<i class="fas fa-plus"></i> Thêm ${sheetName === 'Facebook_Config' ? 'tài khoản' : 'kênh'}`;
             loadConfigData(sheetName); // Refresh list
+            loadConfigs(); // Refresh global dropdowns
         } else {
             const err = await res.json();
-            alert('Lỗi: ' + (err.message || 'Không thể thêm cấu hình.'));
+            alert('Lỗi: ' + (err.message || 'Không thể thực hiện.'));
         }
     } catch (e) {
         alert('Lỗi kết nối server.');
     } finally {
-        const btn = document.querySelector(`[onclick="addConfigAccount('${sheetName}')"]`);
-        if (btn) {
+        const btn = evt.target.closest('button');
+        if (btn && editingConfigIndex === null) {
             btn.disabled = false;
-            btn.innerHTML = `<i class="fas fa-plus"></i> Thêm ${sheetName === 'Facebook_Config' ? 'tài khoản' : 'kênh'}`;
         }
     }
 }
