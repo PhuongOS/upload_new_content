@@ -5,7 +5,7 @@ from googleapiclient.discovery import build
 from .facebook_publisher import FacebookPublisher
 from .youtube_publisher import YoutubePublisher
 from services.sheet_service import SheetService
-from logic import get_creds
+from logic import get_creds, tasks
 
 class PostManager:
     """
@@ -18,7 +18,7 @@ class PostManager:
     HISTORY_SHEET = "Published_History"
 
     def extract_drive_id(self, url):
-        """Trích xuất ID file từ link Google Drive."""
+        """Trích xuất ID file từ link Google Drive một cách mạnh mẽ."""
         if not url: return None
         
         # Xử lý trường hợp URL là chuỗi JSON list (VD: ["link1", "link2"])
@@ -26,63 +26,101 @@ class PostManager:
             try:
                 urls = json.loads(url)
                 if urls and isinstance(urls, list):
-                    url = urls[0] # Lấy link đầu tiên
+                    url = urls[0]
             except Exception:
-                pass # Nếu lỗi parse JSON, coi như string thường
+                pass
 
         import re
+        # Các pattern phổ biến cho Google Drive IDs
         patterns = [
-            r'[-\w]{25,}', # General ID
-            r'id=([-\w]+)', # id=...
-            r'd/([-\w]+)',  # /d/...
+            r'[-\w]{25,}',                  # 1. Chuỗi ID dài thông thường (chuẩn Drive)
+            r'd/([-\w]{25,})',              # 2. Định dạng /d/ID/...
+            r'id=([-\w]{25,})',             # 3. Định dạng id=ID
+            r'folders/([-\w]{25,})'         # 4. Định dạng folders/ID
         ]
+        
         for pattern in patterns:
             match = re.search(pattern, url)
             if match:
-                return match.group(0) if pattern == patterns[0] else match.group(1)
+                extracted_id = match.group(1) if '(' in pattern else match.group(0)
+                # Đảm bảo không lấy nhầm các tham số URL dài khác
+                if len(extracted_id) >= 25 and len(extracted_id) <= 50:
+                    return extracted_id
         return None
 
     def download_from_drive(self, drive_id, output_path):
-        """Tải file từ Drive về máy chủ."""
+        """Tải file từ Drive về máy chủ với logging chi tiết."""
         from googleapiclient.http import MediaIoBaseDownload
         import io
+        print(f"[PostManager] Đang tải file ID: {drive_id} về {output_path}...")
         try:
             creds = get_creds()
             service = build('drive', 'v3', credentials=creds)
+            
+            # Kiểm tra file có tồn tại và size trước
+            file_meta = service.files().get(fileId=drive_id, fields='size,name').execute()
+            file_size = int(file_meta.get('size', 0))
+            print(f"[PostManager] Tên file: {file_meta.get('name')}, Kích thước: {file_size} bytes")
+
             request = service.files().get_media(fileId=drive_id)
             fh = io.FileIO(output_path, 'wb')
             downloader = MediaIoBaseDownload(fh, request)
+            
             done = False
             while done is False:
                 status, done = downloader.next_chunk()
+                if status:
+                    print(f"[PostManager] Tiến độ tải: {int(status.progress() * 100)}%")
+            
             fh.close()
-            return True
+            
+            # Kiểm tra sau khi tải
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                print(f"[PostManager] Tải hoàn tất. File size thực tế: {os.path.getsize(output_path)}")
+                return True
+            else:
+                print(f"[PostManager] ❌ Lỗi: File tải về trống hoặc không tồn tại.")
+                return False
         except Exception as e:
-            print(f"Lỗi tải Drive {drive_id}: {e}")
+            print(f"[PostManager] ❌ Lỗi tải Drive {drive_id}: {str(e)}")
             return False
 
-    def publish_item(self, sheet_name, index):
+    def publish_item(self, sheet_name, index, task_id=None):
         """
         Thực hiện đăng bài cho một dòng cụ thể trong Sheet.
         """
+        print(f"\n[PostManager] === BẮT ĐẦU PUBLISH: {sheet_name} (Dòng {index}) ===")
+        
+        def update_task_msg(msg):
+            if task_id and task_id in tasks:
+                tasks[task_id]["message"] = msg
+                print(f"[PostManager] Task Update: {msg}")
+
         try:
             rows = SheetService.get_all_rows(sheet_name)
             if not rows or index >= len(rows):
-                return {"success": False, "error": f"Không tìm thấy dữ liệu tại dòng {index} trong {sheet_name}."}
+                err = f"Không tìm thấy dữ liệu tại dòng {index} trong {sheet_name}."
+                print(f"[PostManager] ❌ {err}")
+                return {"success": False, "error": err}
             
             item = rows[index]
+            print(f"[PostManager] Dữ liệu dòng: {json.dumps(item)[:200]}...")
             
             if "Facebook" in sheet_name:
-                return self._handle_facebook_publish(item, sheet_name, index)
+                return self._handle_facebook_publish(item, sheet_name, index, task_id)
             elif "Youtube" in sheet_name:
-                return self._handle_youtube_publish(item, sheet_name, index)
+                return self._handle_youtube_publish(item, sheet_name, index, task_id)
                 
             return {"success": False, "error": "Nền tảng không được hỗ trợ."}
         except Exception as e:
             return {"success": False, "error": f"Lỗi hệ thống: {str(e)}"}
 
-    def _handle_facebook_publish(self, item, sheet_name, index):
-        """Xử lý đăng bài lên Facebook và ghi lịch sử."""
+    def _handle_facebook_publish(self, item, sheet_name, index, task_id=None):
+        """Xử lý đăng bài lên Facebook và ghi lịch sử với logging chi tiết."""
+        def update_task_msg(msg):
+            if task_id and task_id in tasks:
+                tasks[task_id]["message"] = msg
+
         page = item.get('page', {})
         page_id = page.get('id')
         token = page.get('access_token')
@@ -93,13 +131,18 @@ class PostManager:
         video_url = item.get('video_url')
         post_type = item.get('post_type', 'Status')
         
+        print(f"[PostManager] FB Publish - Page ID: {page_id}, Type: {post_type}")
+        
         if not page_id or not token:
-            return {"success": False, "error": "Thiếu Facebook Page ID hoặc Access Token."}
+            err = "Thiếu Facebook Page ID hoặc Access Token."
+            print(f"[PostManager] ❌ {err}")
+            return {"success": False, "error": err}
 
         publisher = FacebookPublisher(page_id, token)
         
         # Flow xử lý Video/Reels: Tải về -> Upload
         if post_type in ["Video", "Reels"] and video_url:
+            update_task_msg(f"Đang chuẩn bị tải {post_type}...")
             drive_id = self.extract_drive_id(video_url)
             if not drive_id:
                 return {"success": False, "error": "Không lấy được ID video từ link Drive."}
@@ -112,8 +155,10 @@ class PostManager:
                 
             try:
                 if post_type == "Reels":
+                    update_task_msg("Đang upload Reels lên Facebook...")
                     res = publisher.publish_reel(video_path=temp_path, description=message)
                 else:
+                    update_task_msg("Đang upload Video lên Facebook...")
                     res = publisher.publish_video(video_path=temp_path, title=video_title, description=message)
             finally:
                 if os.path.exists(temp_path):
@@ -121,6 +166,7 @@ class PostManager:
 
         elif post_type in ["Image", "Album"]:
             # Xử lý Album (Nhiều ảnh) hoặc Ảnh đơn
+            update_task_msg(f"Đang chuẩn bị tải ảnh cho {post_type}...")
             # Ưu tiên lấy từ Video_url trước (vì tool upload có thể lưu list ảnh vào đây)
             raw_input = item.get('video_url')
             image_urls = []
@@ -157,6 +203,7 @@ class PostManager:
             
             # 2. Tải ảnh về
             for idx, url in enumerate(image_urls):
+                update_task_msg(f"Đang tải ảnh {idx+1}/{len(image_urls)}...")
                 drive_id = self.extract_drive_id(url)
                 if drive_id:
                     path = os.path.join('uploads_temp', f"fb_img_{index}_{idx}.jpg")
@@ -171,9 +218,11 @@ class PostManager:
             try:
                 if local_paths:
                     if len(local_paths) > 1 or post_type == "Album":
+                        update_task_msg(f"Đang tạo Album với {len(local_paths)} ảnh...")
                         res = publisher.publish_album(image_paths=local_paths, message=message)
                     else:
                         # Ảnh đơn
+                        update_task_msg("Đang upload ảnh đơn lên Facebook...")
                         res = publisher.publish_image(local_paths[0], caption=message) # Cần update publish_image hỗ trợ path
                         # Fallback nếu publish_image chưa hỗ trợ path -> dùng publish_album với 1 ảnh cũng OK
                         if not res.get("success"):
@@ -182,8 +231,10 @@ class PostManager:
                 elif image_urls and not local_paths:
                      # Trường hợp 100% là URL public (không phải Drive)
                      if len(image_urls) > 1:
+                         update_task_msg(f"Đang tạo Album với {len(image_urls)} URLs...")
                          res = publisher.publish_album(image_urls=image_urls, message=message)
                      else:
+                         update_task_msg("Đang đăng ảnh từ URL...")
                          res = publisher.publish_image(image_urls[0], caption=message)
                 else:
                     return {"success": False, "error": "Không tìm thấy ảnh hợp lệ để đăng."}
@@ -194,6 +245,7 @@ class PostManager:
                         os.remove(p)
 
         else:
+            update_task_msg("Đang đăng Status (Text)...")
             res = publisher.publish_status(message)
 
         if res["success"]:
@@ -212,6 +264,7 @@ class PostManager:
                 "Status": "SUCCESS"
             }
             
+            update_task_msg("Đang ghi lịch sử và cập nhật trạng thái...")
             self._log_history(history_data)
             
             item['status'] = 'PUBLISHED'
@@ -222,9 +275,15 @@ class PostManager:
         
         return res
 
-    def _handle_youtube_publish(self, item, sheet_name, index):
-        """Xử lý đăng bài lên YouTube và ghi lịch sử."""
+    def _handle_youtube_publish(self, item, sheet_name, index, task_id=None):
+        """Xử lý đăng bài lên YouTube và ghi lịch sử với logging chi tiết."""
+        def update_task_msg(msg):
+            if task_id and task_id in tasks:
+                tasks[task_id]["message"] = msg
+
+        print(f"[PostManager] YT Publish - Dòng {index}")
         try:
+            update_task_msg("Đang chuẩn bị xác thực YouTube...")
             creds = get_creds()
             publisher = YoutubePublisher(creds)
             
@@ -234,15 +293,23 @@ class PostManager:
             drive_url = item.get('video_url') or item.get('Link_on_drive')
             drive_id = self.extract_drive_id(drive_url)
             
+            print(f"[PostManager] YT Publish - Channel ID: {channel_id}, Drive ID: {drive_id}")
+            
             if not drive_id:
-                return {"success": False, "error": "Không thể lấy ID file từ link Drive."}
+                err = "Không thể lấy ID file từ link Drive."
+                print(f"[PostManager] ❌ {err}")
+                return {"success": False, "error": err}
 
             os.makedirs('uploads_temp', exist_ok=True)
             temp_path = os.path.join('uploads_temp', f"yt_upload_{index}.mp4")
             
+            update_task_msg("Đang tải video từ Drive...")
             if not self.download_from_drive(drive_id, temp_path):
-                return {"success": False, "error": "Lỗi khi tải video từ Drive về server."}
+                err = "Lỗi khi tải video từ Drive về server."
+                print(f"[PostManager] ❌ {err}")
+                return {"success": False, "error": err}
 
+            update_task_msg("Đang upload video lên YouTube...")
             res = publisher.upload_video(
                 file_path=temp_path,
                 title=item.get('video_name', 'No Title'),
@@ -258,6 +325,7 @@ class PostManager:
                 thumb_url = item.get('thumbnail_url') 
                 thumb_drive_id = self.extract_drive_id(thumb_url)
                 if thumb_drive_id:
+                    update_task_msg("Đang upload thumbnail lên YouTube...")
                     thumb_path = os.path.join('uploads_temp', f"yt_thumb_{index}.jpg")
                     if self.download_from_drive(thumb_drive_id, thumb_path):
                         publisher.set_thumbnail(video_id, thumb_path)
@@ -277,9 +345,10 @@ class PostManager:
                     "Status": "SUCCESS"
                 }
                 
+                update_task_msg("Đang ghi lịch sử và cập nhật trạng thái...")
                 self._log_history(history_data)
                 
-                item['status'] = 'SUCCESS' 
+                item['status'] = 'PUBLISHED' 
                 item['yt_video_id'] = video_id 
                 SheetService.update_row(sheet_name, index, item)
                 

@@ -13,7 +13,9 @@ TOKEN_FILE = 'token.json'  # File lưu trữ token đăng nhập sau khi xác th
 CREDENTIALS_FILE = 'assect/AouthGoogle.json'  # File cấu hình Client ID/Secret từ Google Console
 SCOPES = [
     "https://www.googleapis.com/auth/drive",      # Quyền quản lý file trên Drive
-    "https://www.googleapis.com/auth/spreadsheets" # Quyền chỉnh sửa Google Sheets
+    "https://www.googleapis.com/auth/spreadsheets", # Quyền chỉnh sửa Google Sheets
+    "https://www.googleapis.com/auth/youtube.upload", # Quyền upload video lên YouTube
+    "https://www.googleapis.com/auth/youtube.force-ssl" # Quyền quản lý video (set thumbnail, metadata...)
 ]
 UPLOAD_FOLDER = 'uploads_temp'  # Thư mục tạm để lưu file trước khi đẩy lên Drive
 

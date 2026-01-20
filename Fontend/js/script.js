@@ -220,19 +220,34 @@ async function loadSheetData(sheetName) {
 }
 
 function renderCards(container, data, sheetName) {
-    if (!data || data.length === 0) {
-        container.innerHTML = '<p class="empty-state">Không có dữ liệu.</p>';
+    // Filter out published posts
+    const activeData = data.filter(item => {
+        const status = (item.status || '').toUpperCase();
+        return status !== 'PUBLISHED' && status !== 'SUCCESS';
+    });
+
+    if (!activeData || activeData.length === 0) {
+        container.innerHTML = '<p class="empty-state">Không có bài đăng nào cần xử lý (Hoặc tất cả đã được đăng).</p>';
         return;
     }
 
     const platform = sheetName === 'Facebook_db' ? 'facebook' : 'youtube';
 
-    container.innerHTML = data.map((item, index) => {
+    container.innerHTML = activeData.map((item, index) => {
+        // Find original index in full data array to ensure actions work on correct row
+        // Note: index passed to map is local to activeData. We need the real index from the sheet 
+        // which matches the 'stt' usually, but 'stt' is a string. 
+        // Simplest: use data.indexOf(item). 
+        // Wait, updateCardField and other functions take 'index'. If I filter, the index changes.
+        // Important: logic functions take row index. 
+        // I MUST pass the original index.
+        const originalIndex = data.indexOf(item);
+
         const configs = platform === 'facebook' ? facebookConfigs : youtubeConfigs;
         const currentVal = platform === 'facebook' ? (item.page?.id || "") : (item.channel?.id || "");
 
         const dropdownHtml = `
-            <select class="card-select" onchange="updateCardField('${sheetName}', ${index}, { platform: '${platform}', id: this.value, name: this.options[this.selectedIndex].text, gmail: this.options[this.selectedIndex].getAttribute('data-gmail') || '' })">
+            <select class="card-select" onchange="updateCardField('${sheetName}', ${originalIndex}, { platform: '${platform}', id: this.value, name: this.options[this.selectedIndex].text, gmail: this.options[this.selectedIndex].getAttribute('data-gmail') || '' })">
                 <option value="">-- Chọn ${platform === 'facebook' ? 'Page' : 'Kênh'} --</option>
                 ${configs.map(c => {
             const id = platform === 'facebook' ? c.page_id : c.channel_id;
@@ -244,12 +259,12 @@ function renderCards(container, data, sheetName) {
         `;
 
         return `
-            <div class="content-card" onclick="openHookModal(event, '${sheetName}', ${index})">
+            <div class="content-card" onclick="openHookModal(event, '${sheetName}', ${originalIndex})">
                 <div class="card-header">
                     <div class="card-title" title="${item.video_name || item.Name_video || 'No Name'}">
                         ${item.video_name || item.Name_video || 'No Title'}
                     </div>
-                    <div class="card-id">#${item.stt || item.STT || (index + 1)}</div>
+                    <div class="card-id">#${item.stt || item.STT || (originalIndex + 1)}</div>
                 </div>
                 
                 <div class="card-body">
@@ -278,7 +293,7 @@ function renderCards(container, data, sheetName) {
                         <i class="fas fa-file-alt"></i>
                         <div style="flex:1">
                             <span style="display:block; font-size: 11px; opacity: 0.6; margin-bottom: 2px;">Loại bài đăng:</span>
-                            <select class="card-select" onchange="updateCardField('${sheetName}', ${index}, { field: 'post_type', value: this.value })">
+                            <select class="card-select" onchange="updateCardField('${sheetName}', ${originalIndex}, { field: 'post_type', value: this.value })">
                                 ${platform === 'facebook'
                 ? ['Image', 'Text', 'Video', 'Reels'].map(opt => `<option value="${opt}" ${item.post_type === opt ? 'selected' : ''}>${opt}</option>`).join('')
                 : `<option value="Video" selected>Video</option>`}
@@ -299,10 +314,10 @@ function renderCards(container, data, sheetName) {
                     <button class="btn-icon" onclick="openDriveLink('${item.video_url || item.Video_url || item.Link_on_drive || ''}')" title="View on Drive">
                         <i class="fas fa-external-link-alt"></i>
                     </button>
-                    <button class="btn-icon publish" onclick="publishPost(event, '${sheetName}', ${index})" title="Đăng ngay">
+                    <button class="btn-icon publish" onclick="publishPost(event, '${sheetName}', ${originalIndex})" title="Đăng ngay">
                         <i class="fas fa-paper-plane"></i>
                     </button>
-                    <button class="btn-icon delete" onclick="deleteRow('${sheetName}', ${index})" title="Delete">
+                    <button class="btn-icon delete" onclick="deleteRow('${sheetName}', ${originalIndex})" title="Delete">
                         <i class="fas fa-trash-alt"></i>
                     </button>
                 </div>
@@ -436,14 +451,19 @@ function openDriveLink(link) {
 }
 
 async function deleteRow(sheetName, stt) {
-    // Stop propagation if it was a button click inside the card
     if (window.event) window.event.stopPropagation();
     const isMediaCalendar = sheetName === 'Media_Calendar';
     const message = isMediaCalendar
         ? `Bạn có chắc muốn xóa bài đăng #${stt}? HÀNH ĐỘNG NÀY SẼ XÓA CẢ THƯ MỤC TRÊN DRIVE.`
         : `Bạn có chắc muốn xóa bài đăng #${stt}?`;
 
-    const confirmed = await showConfirmModal(message, isMediaCalendar);
+    const confirmed = await showConfirmModal({
+        title: "Xác nhận xóa?",
+        message: message,
+        type: "danger",
+        okText: "Xác nhận xóa",
+        requireText: isMediaCalendar
+    });
     if (!confirmed) return;
 
     try {
@@ -661,35 +681,74 @@ async function syncToPlatformDb(mediaItem, platform, scheduleTime, isRevoke = fa
 }
 
 // CONFIRM MODAL LOGIC
-function showConfirmModal(message, requireText = false) {
+/**
+ * Hiển thị modal xác nhận tùy chỉnh.
+ * @param {Object|string} options - Thông báo hoặc object cấu hình
+ * @returns {Promise<boolean>}
+ */
+function showConfirmModal(options) {
+    if (typeof options === 'string') {
+        options = { message: options };
+    }
+
+    const {
+        title = "Xác nhận?",
+        message = "Bạn có chắc chắn muốn thực hiện hành động này?",
+        type = "danger", // danger, primary, warning, success
+        okText = "Xác nhận",
+        cancelText = "Hủy",
+        requireText = false
+    } = options;
+
+    const modal = document.getElementById('confirmModal');
+    const msgEl = document.getElementById('confirmModalMessage');
+    const titleEl = modal.querySelector('h3');
+    const iconEl = modal.querySelector('.warning-icon');
+    const okBtn = document.getElementById('confirmOkBtn');
+    const cancelBtn = document.getElementById('confirmCancelBtn');
+    const textWrap = document.getElementById('confirmTextWrap');
+    const textInput = document.getElementById('confirmTextInput');
+
+    // Cập nhật nội dung
+    msgEl.innerText = message;
+    titleEl.innerText = title;
+    okBtn.innerText = okText;
+    cancelBtn.innerText = cancelText;
+
+    // Cập nhật giao diện theo type
+    modal.className = `modal-overlay modal-${type}`;
+
+    // Reset và cấu hình input text nếu cần
+    textWrap.style.display = requireText ? 'block' : 'none';
+    textInput.value = '';
+
+    modal.classList.add('visible');
+
     return new Promise((resolve) => {
-        const modal = document.getElementById('confirmModal');
-        const messageEl = document.getElementById('confirmModalMessage');
-        const okBtn = document.getElementById('confirmOkBtn');
-        const cancelBtn = document.getElementById('confirmCancelBtn');
-        const textWrap = document.getElementById('confirmTextWrap');
-        const textInput = document.getElementById('confirmTextInput');
+        const handleCancel = () => {
+            modal.classList.remove('visible');
+            cleanup();
+            resolve(false);
+        };
 
-        messageEl.textContent = message;
-        textInput.value = "";
-        textWrap.style.display = requireText ? 'block' : 'none';
-
-        modal.classList.add('visible');
-
-        const handleResponse = (result) => {
-            if (result && requireText && textInput.value.trim().toUpperCase() !== 'DELETE') {
-                alert("Vui lòng nhập đúng chữ DELETE để xác nhận!");
+        const handleOk = () => {
+            if (requireText && textInput.value.trim().toUpperCase() !== 'DELETE') {
+                textInput.classList.add('shake');
+                setTimeout(() => textInput.classList.remove('shake'), 400);
                 return;
             }
             modal.classList.remove('visible');
-            resolve(result);
-            // Cleanup listeners
-            okBtn.onclick = null;
-            cancelBtn.onclick = null;
+            cleanup();
+            resolve(true);
         };
 
-        okBtn.onclick = () => handleResponse(true);
-        cancelBtn.onclick = () => handleResponse(false);
+        const cleanup = () => {
+            okBtn.removeEventListener('click', handleOk);
+            cancelBtn.removeEventListener('click', handleCancel);
+        };
+
+        okBtn.addEventListener('click', handleOk);
+        cancelBtn.addEventListener('click', handleCancel);
     });
 }
 
@@ -741,7 +800,14 @@ confirmBtn.onclick = async () => {
             addProgressItem("🚀 Đã bắt đầu Upload ngầm!");
             statusMessage.textContent = "Đang chạy ngầm...";
 
-            if (confirm("Yêu cầu đã được gửi. Bạn có muốn reset form không?")) {
+            const resetConfirmed = await showConfirmModal({
+                title: "Thành công!",
+                message: "Yêu cầu đã được gửi. Bạn có muốn reset form không?",
+                type: "warning",
+                okText: "Reset Form",
+                cancelText: "Giữ lại dữ liệu"
+            });
+            if (resetConfirmed) {
                 document.getElementById('resetBtn').click();
             }
         } else {
@@ -1056,7 +1122,12 @@ async function addConfigAccount(evt, sheetName) {
 }
 
 async function deleteConfigRow(sheetName, stt) {
-    const confirmed = await showConfirmModal(`Bạn có chắc muốn xóa cấu hình #${stt}?`);
+    const confirmed = await showConfirmModal({
+        title: "Xóa cấu hình?",
+        message: `Bạn có chắc muốn xóa cấu hình #${stt}?`,
+        type: "danger",
+        okText: "Xóa ngay"
+    });
     if (!confirmed) return;
 
     try {
@@ -1079,14 +1150,27 @@ async function deleteConfigRow(sheetName, stt) {
 async function publishPost(event, sheetName, index) {
     if (event) event.stopPropagation();
 
-    if (!confirm(`Bạn có chắc muốn ĐĂNG bài viết này lên ${sheetName === 'Facebook_db' ? 'Facebook' : 'YouTube'} không?`)) {
-        return;
+    const confirmed = await showConfirmModal({
+        title: "Xác nhận đăng bài?",
+        message: `Bạn có chắc muốn ĐĂNG bài viết này lên ${sheetName === 'Facebook_db' ? 'Facebook' : 'YouTube'} không?`,
+        type: "primary",
+        okText: "Đăng ngay",
+        cancelText: "Hủy"
+    });
+
+    if (!confirmed) return;
+
+    // Tìm button element chính xác
+    const btn = event ? (event.currentTarget || event.target.closest('button')) : null;
+    let originalHtml = "";
+
+    if (btn) {
+        originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i>';
     }
 
-    const btn = event.currentTarget;
-    const originalHtml = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i>';
+    console.log(`[Publish] Đang gửi yêu cầu cho ${sheetName} tại dòng ${index}`);
 
     try {
         const res = await fetch('/api/v2/post/publish', {
@@ -1095,19 +1179,66 @@ async function publishPost(event, sheetName, index) {
             body: JSON.stringify({ sheet_name: sheetName, index: index })
         });
 
+        if (!res.ok) {
+            const errorText = await res.text();
+            throw new Error(errorText || res.statusText);
+        }
+
         const result = await res.json();
-        if (res.ok) {
-            alert('🚀 Đăng bài thành công!');
-            loadSheetData(sheetName); // Refresh card status
+        if (result.task_id) {
+            addProgressItem(`🕒 [Task] Đã bắt đầu khởi tạo (ID: ${result.task_id.substring(0, 8)}...)`);
+            startTaskPolling(result.task_id, btn, originalHtml, sheetName);
         } else {
-            alert('❌ Lỗi đăng bài: ' + (result.error || 'Unknown error'));
+            throw new Error(result.error || 'Server không trả về Task ID');
         }
     } catch (err) {
-        alert('❌ Lỗi kết nối server.');
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = originalHtml;
+        console.error("[Publish Error]", err);
+        alert('❌ Lỗi: ' + err.message);
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        }
     }
+}
+
+function startTaskPolling(taskId, btn, originalHtml, sheetName) {
+    let lastMessage = "";
+    const interval = setInterval(async () => {
+        try {
+            const res = await fetch('/api/tasks');
+            const tasks = await res.json();
+            const task = tasks[taskId];
+
+            if (!task) return;
+
+            if (task.status === 'processing') {
+                btn.innerHTML = '<i class="fas fa-sync fa-spin"></i>';
+                // Cập nhật progress item nếu có log message mới và khác message cũ
+                if (task.message && task.message !== lastMessage) {
+                    addProgressItem(`🔄 [Post] ${task.message}`);
+                    lastMessage = task.message;
+                }
+            } else if (task.status === 'success') {
+                clearInterval(interval);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-check-circle" style="color: #10b981;"></i>';
+                addProgressItem(`✅ [Post] Đăng thành công! (ID: ${task.result?.post_id || 'N/A'})`);
+                alert('🚀 Bài viết đã được đăng thành công!');
+                loadSheetData(sheetName);
+
+                // Reset icon sau 3 giây
+                setTimeout(() => { btn.innerHTML = originalHtml; }, 3000);
+            } else if (task.status === 'error') {
+                clearInterval(interval);
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+                addProgressItem(`❌ [Post] Lỗi: ${task.message}`);
+                alert('❌ Lỗi khi đăng bài: ' + task.message);
+            }
+        } catch (e) {
+            console.error("Polling error:", e);
+        }
+    }, 2500);
 }
 
 function renderHistory(container, data) {
@@ -1116,57 +1247,82 @@ function renderHistory(container, data) {
         return;
     }
 
-    container.innerHTML = data.map((item, index) => {
-        // Xác định nền tảng dựa trên link hoặc nội dung (vì schema mới không có cột platform riêng)
-        const isFacebook = !!item.Facebook_Post_Id;
-        const platformLabel = isFacebook ? 'Facebook' : 'YouTube';
-        const platformClass = isFacebook ? 'facebook' : 'youtube';
-        const postId = isFacebook ? item.Facebook_Post_Id : item.Youtube_Post_Id;
-        const pageOrChannel = isFacebook ? item.Page_name : item.Channel_name;
+    // Tách dữ liệu theo nền tảng
+    const facebookItems = data.filter(item => (item.Page_name || item.Facebook_Post_Id) && !item.Channel_name);
+    const youtubeItems = data.filter(item => (item.Channel_name || item.Youtube_Post_Id));
 
-        return `
-            <div class="content-card history-card">
-                <div class="card-header">
-                    <div class="card-title" title="${item.Name_video}">${item.Name_video || 'No Title'}</div>
-                    <div class="badge badge-${platformClass}">${platformLabel}</div>
+    const renderGroup = (items, title, iconClass, badgeClass) => {
+        if (!items || items.length === 0) return '';
+
+        const gridHtml = items.map((item) => {
+            const realIndex = data.indexOf(item);
+            const isFacebook = !!item.Facebook_Post_Id;
+            const postId = isFacebook ? item.Facebook_Post_Id : item.Youtube_Post_Id;
+            const pageOrChannel = isFacebook ? item.Page_name : item.Channel_name;
+            const platformClass = isFacebook ? 'facebook' : 'youtube';
+
+            return `
+            <div class="content-card history-card premium-glass">
+                <div class="card-media-wrap">
+                    <img src="${item.Thumbnail || 'https://via.placeholder.com/150'}" alt="Thumbnail" class="history-thumb" onerror="this.src='https://via.placeholder.com/150&text=No+Image'">
+                    <div class="platform-icon-overlay">
+                        <i class="${isFacebook ? 'fab fa-facebook' : 'fab fa-youtube'}"></i>
+                    </div>
+                    <div class="play-button-overlay">
+                        <i class="fas fa-play"></i>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <div class="history-thumb-wrap">
-                        <img src="${item.Thumbnail || 'https://via.placeholder.com/150'}" alt="Thumbnail" class="history-thumb" onerror="this.src='https://via.placeholder.com/150&text=No+Image'">
-                    </div>
-                    <div class="card-info-item">
-                        <i class="fas fa-user-circle"></i>
-                        <span>Nguồn: ${pageOrChannel || 'N/A'}</span>
-                    </div>
-                    <div class="card-info-item">
-                        <i class="fas fa-hashtag"></i>
-                        <span style="font-size: 10px; opacity: 0.8;">ID: ${postId || 'N/A'}</span>
-                    </div>
-                    <div class="card-info-item">
-                        <i class="fas fa-info-circle"></i>
-                        <span class="status-badge ${item.Status === 'SUCCESS' ? 'status-success' : 'status-fail'}">
-                            ${item.Status || 'UNKNOWN'}
+                
+                <div class="card-content-wrap">
+                    <div class="card-title-line" title="${item.Name_video}">${item.Name_video || 'No Title'}</div>
+                    
+                    <div class="status-row">
+                        <span class="status-label-glass ${item.Status === 'SUCCESS' ? 'status-success' : 'status-fail'}">
+                            <span class="dot"></span> ${item.Status === 'SUCCESS' ? 'Success' : 'Failed'}
                         </span>
                     </div>
+
+                    <div class="card-footer-actions">
+                        <button class="btn-platform-view" onclick="window.open('${item.Link_On_Platfrom}', '_blank')">
+                            <span>View on Platform</span>
+                            <i class="fas fa-arrow-right"></i>
+                        </button>
+                    </div>
                 </div>
-                <div class="card-actions">
-                    <button class="btn-icon" onclick="window.open('${item.Link_On_Platfrom}', '_blank')" title="Xem bài đăng">
-                        <i class="fas fa-external-link-alt"></i>
-                    </button>
-                    <button class="btn-icon edit" onclick="alert('Tính năng chỉnh sửa bài đã đăng đang được cập nhật...')" title="Chỉnh sửa bài">
-                        <i class="fas fa-pencil-alt"></i>
-                    </button>
-                    <button class="btn-icon delete" onclick="deleteHistoryRow(${index})" title="Xoá lịch sử">
-                        <i class="fas fa-trash-alt"></i>
-                    </button>
+                
+                <button class="btn-delete-history" onclick="deleteHistoryRow(${realIndex})" title="Xoá lịch sử">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
+            </div>`;
+        }).join('');
+
+        return `
+            <div style="margin-bottom: 40px;">
+                <h3 style="margin-bottom: 20px; font-size: 1.1rem; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">
+                    <i class="${iconClass}"></i> ${title} <span class="badge ${badgeClass}" style="margin-left: auto;">${items.length}</span>
+                </h3>
+                <div class="history-grid">
+                    ${gridHtml}
                 </div>
             </div>
         `;
-    }).join('');
+    };
+
+    let fullHtml = '';
+    if (facebookItems.length > 0) fullHtml += renderGroup(facebookItems, 'Facebook History', 'fab fa-facebook', 'badge-facebook');
+    if (youtubeItems.length > 0) fullHtml += renderGroup(youtubeItems, 'YouTube History', 'fab fa-youtube', 'badge-youtube');
+
+    container.innerHTML = fullHtml || '<p class="empty-state">Không có dữ liệu lịch sử.</p>';
 }
 
 async function deleteHistoryRow(index) {
-    if (!confirm('Bạn có chắc muốn xoá dòng lịch sử này khỏi bảng tính?')) return;
+    const confirmed = await showConfirmModal({
+        title: "Xóa lịch sử?",
+        message: "Bạn có chắc muốn xoá dòng lịch sử này khỏi bảng tính?",
+        type: "danger",
+        okText: "Xóa"
+    });
+    if (!confirmed) return;
 
     try {
         const res = await fetch(`/api/v2/sheets/Published_History/${index}`, {

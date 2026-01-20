@@ -554,7 +554,7 @@ def post_publish():
             tasks[tid]["message"] = "Đang tải video và xử lý..."
             
             # Gọi hàm xử lý chính (đồng bộ, mất thời gian tải)
-            result = post_manager.publish_item(s_name, int(idx))
+            result = post_manager.publish_item(s_name, int(idx), tid)
             
             if result.get("success"):
                 tasks[tid]["status"] = "success"
