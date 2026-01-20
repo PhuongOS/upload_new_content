@@ -1035,12 +1035,29 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
   opacity: 1;
 }
 
-.table-thumb {
-  width: 40px;
-  height: 40px;
-  border-radius: 6px;
-  object-fit: cover;
-  border: 1px solid var(--glass-border);
+textarea {
   background: rgba(255, 255, 255, 0.05);
-  display: block;
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 14px;
+  color: white;
+  width: 100%;
+  font-family: inherit;
+  resize: vertical;
+}
+
+textarea:focus {
+  border-color: var(--primary);
+  background: rgba(255, 255, 255, 0.08);
+  outline: none;
+}
+
+.content-card {
+  cursor: pointer;
+}
+
+.content-card:hover {
+  border-color: var(--primary);
+  transform: translateY(-5px);
+  background: rgba(255, 255, 255, 0.06);
 }

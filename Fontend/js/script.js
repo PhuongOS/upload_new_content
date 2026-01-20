@@ -225,7 +225,7 @@ function renderCards(container, data, sheetName) {
         `;
 
         return `
-            <div class="content-card">
+            <div class="content-card" onclick="openHookModal('${sheetName}', ${index}, '${(item.hook || '').replace(/'/g, "\\'")}')">
                 <div class="card-header">
                     <div class="card-title" title="${item.video_name || item.Name_video || 'No Name'}">
                         ${item.video_name || item.Name_video || 'No Title'}
@@ -234,6 +234,11 @@ function renderCards(container, data, sheetName) {
                 </div>
                 
                 <div class="card-body">
+                    <div class="card-info-item">
+                        <i class="fas fa-quote-left"></i>
+                        <span class="hook-preview">${item.hook ? item.hook.substring(0, 50) + (item.hook.length > 50 ? '...' : '') : 'Click để thêm mô tả (Hook)...'}</span>
+                    </div>
+
                     <div class="card-info-item">
                         <i class="fas fa-folder-open"></i>
                         <span>ID Drive: ${item.media_drive_id || item.Id_media_on_drive || 'N/A'}</span>
@@ -404,10 +409,13 @@ async function updateCardField(sheetName, index, fieldData) {
 }
 
 function openDriveLink(link) {
+    if (window.event) window.event.stopPropagation();
     if (link) window.open(link, '_blank');
 }
 
 async function deleteRow(sheetName, stt) {
+    // Stop propagation if it was a button click inside the card
+    if (window.event) window.event.stopPropagation();
     const isMediaCalendar = sheetName === 'Media_Calendar';
     const message = isMediaCalendar
         ? `Bạn có chắc muốn xóa bài đăng #${stt}? HÀNH ĐỘNG NÀY SẼ XÓA CẢ THƯ MỤC TRÊN DRIVE.`
@@ -725,6 +733,71 @@ confirmBtn.onclick = async () => {
     } finally {
         confirmBtn.disabled = false;
         confirmBtn.textContent = "Bắt đầu Upload";
+    }
+};
+
+// HOOK MODAL LOGIC
+let activeHookTarget = { sheetName: null, index: null };
+
+async function openHookModal(sheetName, index, currentHook) {
+    // If we click select/button inside card, don't trigger modal
+    const target = window.event.target;
+    if (target.tagName === 'SELECT' || target.tagName === 'OPTION' || target.closest('.card-actions') || target.closest('button')) {
+        return;
+    }
+
+    activeHookTarget = { sheetName, index };
+
+    // Fetch full row to be sure we have latest content
+    try {
+        const res = await fetch(`/api/v2/sheets/${sheetName}`);
+        const rows = await res.json();
+        const item = rows[index];
+
+        document.getElementById('hook-item-name').textContent = item.video_name || item.Name_video || 'Nội dung #' + (index + 1);
+        document.getElementById('hookInput').value = item.hook || "";
+        document.getElementById('hookModal').classList.add('visible');
+    } catch (e) {
+        alert("Không thể tải thông tin nội dung.");
+    }
+}
+
+function closeHookModal() {
+    document.getElementById('hookModal').classList.remove('visible');
+}
+
+document.getElementById('saveHookBtn').onclick = async () => {
+    const { sheetName, index } = activeHookTarget;
+    const newHook = document.getElementById('hookInput').value;
+
+    const saveBtn = document.getElementById('saveHookBtn');
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Đang lưu...";
+
+    try {
+        const loadRes = await fetch(`/api/v2/sheets/${sheetName}`);
+        const rows = await loadRes.json();
+        const row = rows[index];
+
+        row.hook = newHook;
+
+        const res = await fetch(`/api/v2/sheets/${sheetName}/${index}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(row)
+        });
+
+        if (res.ok) {
+            closeHookModal();
+            loadSheetData(sheetName);
+        } else {
+            alert('Lỗi khi lưu Hook.');
+        }
+    } catch (e) {
+        alert('Lỗi kết nối server.');
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Lưu nội dung";
     }
 };
 // CONFIG VIEW LOGIC
