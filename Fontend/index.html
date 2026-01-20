@@ -197,6 +197,15 @@
                                     <label><i class="fas fa-table"></i> Sheet ID (Spreadsheet ID)</label>
                                     <input type="text" id="sheetId" placeholder="Google Sheet ID">
                                 </div>
+                                <div class="input-group">
+                                    <label><i class="fas fa-robot"></i> Gemini API Key</label>
+                                    <input type="password" id="geminiApiKey" placeholder="Nhập API Key Gemini">
+                                </div>
+                                <div class="input-group">
+                                    <label><i class="fas fa-comment-dots"></i> System Prompt AI</label>
+                                    <textarea id="geminiSystemPrompt" rows="3"
+                                        placeholder="Định hướng cho AI (ví dụ: Viết Hook thu hút cho Reels Facebook)"></textarea>
+                                </div>
                                 <button class="btn btn-primary" onclick="saveConfig()">Lưu cấu hình hệ thống</button>
                             </div>
                         </div>
@@ -344,6 +353,11 @@
                 <p id="hook-item-name" class="item-display-name"></p>
                 <div class="input-group">
                     <label>Nội dung Hook (Cột F)</label>
+                    <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                        <button class="btn btn-warning btn-sm" id="aiWriteBtn" onclick="generateAiHook()">
+                            <i class="fas fa-magic"></i> AI hỗ trợ viết
+                        </button>
+                    </div>
                     <textarea id="hookInput" rows="6" placeholder="Nhập mô tả nội dung..."></textarea>
                 </div>
             </div>

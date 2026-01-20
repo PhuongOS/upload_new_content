@@ -14,6 +14,8 @@ const confirmBtn = document.getElementById('confirmBtn');
 const progressList = document.getElementById('progressList');
 const userEmailSpan = document.getElementById('userEmail');
 const statusMessage = document.getElementById('statusMessage');
+const geminiApiKeyInput = document.getElementById('geminiApiKey');
+const geminiSystemPromptInput = document.getElementById('geminiSystemPrompt');
 const viewTitle = document.getElementById('view-title');
 
 // Edit state for configurations
@@ -58,6 +60,8 @@ window.onload = () => {
     // Load config
     parentFolderInput.value = localStorage.getItem('parentFolderId') || DEFAULT_DRIVE_ID;
     sheetIdInput.value = localStorage.getItem('sheetId') || DEFAULT_SHEET_ID;
+    geminiApiKeyInput.value = localStorage.getItem('geminiApiKey') || "";
+    geminiSystemPromptInput.value = localStorage.getItem('geminiSystemPrompt') || "Bạn là một người sáng tạo nội dung mạng xã hội chuyên nghiệp. Hãy viết nội dung ngắn gọn, thu hút, nhiều icon và hashtag.";
 
     // Check Auth Status with Backend
     checkBackendAuth();
@@ -132,6 +136,8 @@ async function loadConfigs() {
 function saveConfig() {
     localStorage.setItem('parentFolderId', parentFolderInput.value.trim());
     localStorage.setItem('sheetId', sheetIdInput.value.trim());
+    localStorage.setItem('geminiApiKey', geminiApiKeyInput.value.trim());
+    localStorage.setItem('geminiSystemPrompt', geminiSystemPromptInput.value.trim());
     alert('Cấu hình đã được lưu!');
 }
 
@@ -801,6 +807,54 @@ document.getElementById('saveHookBtn').onclick = async () => {
         saveBtn.textContent = "Lưu nội dung";
     }
 };
+
+async function generateAiHook() {
+    const { sheetName, index } = activeHookTarget;
+    const rows = sheetName === 'Facebook_db' ? currentFacebookData : currentYoutubeData;
+    const item = rows[index];
+
+    if (!item) return;
+
+    const apiKey = geminiApiKeyInput.value.trim();
+    if (!apiKey) {
+        alert("Vui lòng cấu hình Gemini API Key trong phần Cài đặt chung!");
+        return;
+    }
+
+    const aiBtn = document.getElementById('aiWriteBtn');
+    const hookInput = document.getElementById('hookInput');
+
+    aiBtn.disabled = true;
+    const originalText = aiBtn.innerHTML;
+    aiBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang suy nghĩ...';
+
+    const videoName = item.video_name || item.Name_video || "nội dung này";
+    const userPrompt = `Hãy viết một đoạn Hook ngắn gọn (khoảng 2-3 câu) để mô tả cho video có tên: "${videoName}". ${item.hook ? 'Tham khảo nội dung hiện tại: ' + item.hook : ''}`;
+
+    try {
+        const res = await fetch('/api/v2/ai/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                api_key: apiKey,
+                system_prompt: geminiSystemPromptInput.value.trim(),
+                user_prompt: userPrompt
+            })
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+            hookInput.value = data.result;
+        } else {
+            alert("Lỗi AI: " + data.error);
+        }
+    } catch (err) {
+        alert("Lỗi kết nối khi gọi AI.");
+    } finally {
+        aiBtn.disabled = false;
+        aiBtn.innerHTML = originalText;
+    }
+}
 // CONFIG VIEW LOGIC
 const configTabBtns = document.querySelectorAll('.config-tab-btn');
 const configTabContents = document.querySelectorAll('.config-tab-content');

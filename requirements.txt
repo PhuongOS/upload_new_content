@@ -5,4 +5,4 @@ flask
 werkzeug
 gunicorn
 flasgger
-
+google-generativeai

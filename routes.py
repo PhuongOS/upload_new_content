@@ -498,3 +498,27 @@ def delete_v2_sheet_row(sheet_name, row_index):
         return jsonify({"message": "Xóa hàng thành công (kèm Drive nếu có)"})
     except Exception as e:
         return jsonify({"error": str(e)}), 400
+
+from provider.gemini import GeminiProvider
+
+@api_bp.route('/api/v2/ai/generate', methods=['POST'])
+def ai_generate():
+    """
+    Sử dụng AI Gemini để tạo nội dung
+    """
+    data = request.json
+    api_key = data.get('api_key')
+    system_prompt = data.get('system_prompt')
+    user_prompt = data.get('user_prompt')
+
+    if not api_key:
+        return jsonify({"error": "Vui lòng cung cấp Gemini API Key"}), 400
+    if not user_prompt:
+        return jsonify({"error": "Vui lòng nhập nội dung muốn tạo"}), 400
+
+    try:
+        provider = GeminiProvider(api_key, system_prompt)
+        text = provider.generate_content(user_prompt)
+        return jsonify({"result": text})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
