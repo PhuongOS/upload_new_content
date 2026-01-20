@@ -514,9 +514,6 @@ async function revokeSchedule() {
     const item = currentCalendarData[index];
     if (!item) return;
 
-    const confirmed = await showConfirmModal("Bạn có chắc chắn muốn thu hồi lịch đăng này không? Hàng tương ứng ở bảng đồng bộ sẽ bị xóa.");
-    if (!confirmed) return;
-
     const revokeBtn = document.getElementById('revokeScheduleBtn');
     revokeBtn.disabled = true;
     revokeBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Đang thu hồi...';
