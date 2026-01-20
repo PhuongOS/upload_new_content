@@ -20,8 +20,10 @@ const viewTitle = document.getElementById('view-title');
 let editingConfigIndex = null;
 let currentConfigSheet = null;
 
-// State for Media Calendar updates
+// State for data updates
 let currentCalendarData = [];
+let currentFacebookData = [];
+let currentYoutubeData = [];
 let activeScheduleTarget = { index: null, platform: null };
 let facebookConfigs = [];
 let youtubeConfigs = [];
@@ -190,9 +192,13 @@ async function loadSheetData(sheetName) {
         const data = await res.json();
 
         if (sheetName === 'Media_Calendar') {
-            currentCalendarData = data; // Store globally for updates
+            currentCalendarData = data;
             renderCalendar(container, data);
-        } else {
+        } else if (sheetName === 'Facebook_db') {
+            currentFacebookData = data;
+            renderCards(container, data, sheetName);
+        } else if (sheetName === 'Youtube_db') {
+            currentYoutubeData = data;
             renderCards(container, data, sheetName);
         }
     } catch (err) {
@@ -225,7 +231,7 @@ function renderCards(container, data, sheetName) {
         `;
 
         return `
-            <div class="content-card" onclick="openHookModal('${sheetName}', ${index}, '${(item.hook || '').replace(/'/g, "\\'")}')">
+            <div class="content-card" onclick="openHookModal(event, '${sheetName}', ${index})">
                 <div class="card-header">
                     <div class="card-title" title="${item.video_name || item.Name_video || 'No Name'}">
                         ${item.video_name || item.Name_video || 'No Title'}
@@ -739,27 +745,23 @@ confirmBtn.onclick = async () => {
 // HOOK MODAL LOGIC
 let activeHookTarget = { sheetName: null, index: null };
 
-async function openHookModal(sheetName, index, currentHook) {
+async function openHookModal(event, sheetName, index) {
     // If we click select/button inside card, don't trigger modal
-    const target = window.event.target;
+    const target = event.target;
     if (target.tagName === 'SELECT' || target.tagName === 'OPTION' || target.closest('.card-actions') || target.closest('button')) {
         return;
     }
 
     activeHookTarget = { sheetName, index };
 
-    // Fetch full row to be sure we have latest content
-    try {
-        const res = await fetch(`/api/v2/sheets/${sheetName}`);
-        const rows = await res.json();
-        const item = rows[index];
+    // Choose local data for instant opening
+    const rows = sheetName === 'Facebook_db' ? currentFacebookData : currentYoutubeData;
+    const item = rows[index];
+    if (!item) return;
 
-        document.getElementById('hook-item-name').textContent = item.video_name || item.Name_video || 'Nội dung #' + (index + 1);
-        document.getElementById('hookInput').value = item.hook || "";
-        document.getElementById('hookModal').classList.add('visible');
-    } catch (e) {
-        alert("Không thể tải thông tin nội dung.");
-    }
+    document.getElementById('hook-item-name').textContent = item.video_name || item.Name_video || 'Nội dung #' + (index + 1);
+    document.getElementById('hookInput').value = item.hook || "";
+    document.getElementById('hookModal').classList.add('visible');
 }
 
 function closeHookModal() {
@@ -775,8 +777,7 @@ document.getElementById('saveHookBtn').onclick = async () => {
     saveBtn.textContent = "Đang lưu...";
 
     try {
-        const loadRes = await fetch(`/api/v2/sheets/${sheetName}`);
-        const rows = await loadRes.json();
+        const rows = sheetName === 'Facebook_db' ? currentFacebookData : currentYoutubeData;
         const row = rows[index];
 
         row.hook = newHook;
