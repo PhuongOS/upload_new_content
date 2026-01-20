@@ -1264,7 +1264,7 @@ function renderHistory(container, data) {
             return `
             <div class="content-card history-card premium-glass">
                 <div class="card-media-wrap">
-                    <img src="${item.Thumbnail || 'https://via.placeholder.com/150'}" alt="Thumbnail" class="history-thumb" onerror="this.src='https://via.placeholder.com/150&text=No+Image'">
+                    <img src="${item.Thumbnail || 'https://placehold.co/150'}" alt="Thumbnail" class="history-thumb" onerror="this.src='https://placehold.co/150?text=No+Image'">
                     <div class="platform-icon-overlay">
                         <i class="${isFacebook ? 'fab fa-facebook' : 'fab fa-youtube'}"></i>
                     </div>
