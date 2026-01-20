@@ -15,7 +15,8 @@ const progressList = document.getElementById('progressList');
 const userEmailSpan = document.getElementById('userEmail');
 const statusMessage = document.getElementById('statusMessage');
 const geminiApiKeyInput = document.getElementById('geminiApiKey');
-const geminiSystemPromptInput = document.getElementById('geminiSystemPrompt');
+const fbGeminiSystemPromptInput = document.getElementById('fbGeminiSystemPrompt');
+const ytGeminiSystemPromptInput = document.getElementById('ytGeminiSystemPrompt');
 const viewTitle = document.getElementById('view-title');
 
 // Edit state for configurations
@@ -61,7 +62,8 @@ window.onload = () => {
     parentFolderInput.value = localStorage.getItem('parentFolderId') || DEFAULT_DRIVE_ID;
     sheetIdInput.value = localStorage.getItem('sheetId') || DEFAULT_SHEET_ID;
     geminiApiKeyInput.value = localStorage.getItem('geminiApiKey') || "";
-    geminiSystemPromptInput.value = localStorage.getItem('geminiSystemPrompt') || "Bạn là một người sáng tạo nội dung mạng xã hội chuyên nghiệp. Hãy viết nội dung ngắn gọn, thu hút, nhiều icon và hashtag.";
+    fbGeminiSystemPromptInput.value = localStorage.getItem('fbGeminiSystemPrompt') || "Bạn là một người sáng tạo nội dung Facebook chuyên nghiệp. Hãy viết Hook ngắn gọn, thu hút, kèm icon và hashtag phù hợp.";
+    ytGeminiSystemPromptInput.value = localStorage.getItem('ytGeminiSystemPrompt') || "Bạn là một người sáng tạo nội dung Youtube chuyên nghiệp. Hãy viết đoạn giới thiệu video hấp dẫn, tối ưu SEO và lôi cuốn người xem.";
 
     // Check Auth Status with Backend
     checkBackendAuth();
@@ -137,7 +139,8 @@ function saveConfig() {
     localStorage.setItem('parentFolderId', parentFolderInput.value.trim());
     localStorage.setItem('sheetId', sheetIdInput.value.trim());
     localStorage.setItem('geminiApiKey', geminiApiKeyInput.value.trim());
-    localStorage.setItem('geminiSystemPrompt', geminiSystemPromptInput.value.trim());
+    localStorage.setItem('fbGeminiSystemPrompt', fbGeminiSystemPromptInput.value.trim());
+    localStorage.setItem('ytGeminiSystemPrompt', ytGeminiSystemPromptInput.value.trim());
     alert('Cấu hình đã được lưu!');
 }
 
@@ -829,6 +832,7 @@ async function generateAiHook() {
     aiBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang suy nghĩ...';
 
     const videoName = item.video_name || item.Name_video || "nội dung này";
+    const systemPrompt = sheetName === 'Facebook_db' ? fbGeminiSystemPromptInput.value.trim() : ytGeminiSystemPromptInput.value.trim();
     const userPrompt = `Hãy viết một đoạn Hook ngắn gọn (khoảng 2-3 câu) để mô tả cho video có tên: "${videoName}". ${item.hook ? 'Tham khảo nội dung hiện tại: ' + item.hook : ''}`;
 
     try {
@@ -837,7 +841,7 @@ async function generateAiHook() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 api_key: apiKey,
-                system_prompt: geminiSystemPromptInput.value.trim(),
+                system_prompt: systemPrompt,
                 user_prompt: userPrompt
             })
         });
