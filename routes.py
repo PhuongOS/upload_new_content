@@ -526,3 +526,61 @@ def ai_generate():
         if "429" in error_msg or "Too Many Requests" in error_msg:
             status_code = 429
         return jsonify({"error": error_msg}), status_code
+
+# --- DỊCH VỤ ĐĂNG BÀI (POST SERVICE) ---
+from post_service.manager import PostManager
+
+post_manager = PostManager()
+
+@api_bp.route('/api/v2/post/publish', methods=['POST'])
+def post_publish():
+    """Kích hoạt tiến trình đăng bài lên MXH (Async/Queue)."""
+    data = request.json
+    sheet_name = data.get('sheet_name')
+    index = data.get('index')
+    
+    if not sheet_name or index is None:
+        return jsonify({"error": "Thiếu thông tin bảng tính hoặc dòng"}), 400
+    
+    task_id = str(uuid.uuid4())
+    tasks[task_id] = {
+        "status": "queued", 
+        "message": f"Đang chuẩn bị đăng bài (Dòng {index} - {sheet_name})..."
+    }
+    
+    def background_publish(tid, s_name, idx):
+        try:
+            tasks[tid]["status"] = "processing"
+            tasks[tid]["message"] = "Đang tải video và xử lý..."
+            
+            # Gọi hàm xử lý chính (đồng bộ, mất thời gian tải)
+            result = post_manager.publish_item(s_name, int(idx))
+            
+            if result.get("success"):
+                tasks[tid]["status"] = "success"
+                tasks[tid]["message"] = "Đăng thành công!"
+                tasks[tid]["result"] = result
+            else:
+                tasks[tid]["status"] = "error"
+                tasks[tid]["message"] = result.get("error", "Lỗi không xác định")
+        except Exception as e:
+            tasks[tid]["status"] = "error"
+            tasks[tid]["message"] = f"Lỗi hệ thống: {str(e)}"
+
+    # Chạy thread ngầm
+    threading.Thread(target=background_publish, args=(task_id, sheet_name, index)).start()
+        
+    return jsonify({
+        "status": "queued", 
+        "task_id": task_id, 
+        "message": "Yêu cầu đã được tiếp nhận và xử lý ngầm."
+    })
+
+@api_bp.route('/api/v2/post/history', methods=['GET'])
+def post_history():
+    """Lấy danh sách lịch sử bài đã đăng."""
+    try:
+        data = SheetService.get_all_rows("Published_History")
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

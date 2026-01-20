@@ -6,3 +6,6 @@ werkzeug
 gunicorn
 flasgger
 google-generativeai
+grpcio
+protobuf
+requests

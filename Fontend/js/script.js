@@ -190,7 +190,8 @@ async function loadSheetData(sheetName) {
     const containerId = {
         'Facebook_db': 'facebook-cards-container',
         'Youtube_db': 'youtube-cards-container',
-        'Media_Calendar': 'calendar-groups-container'
+        'Media_Calendar': 'calendar-groups-container',
+        'Published_History': 'history-list'
     }[sheetName];
 
     const container = document.getElementById(containerId);
@@ -209,6 +210,9 @@ async function loadSheetData(sheetName) {
         } else if (sheetName === 'Youtube_db') {
             currentYoutubeData = data;
             renderCards(container, data, sheetName);
+        } else if (sheetName === 'Published_History') {
+            currentHistoryData = data;
+            renderHistory(container, data);
         }
     } catch (err) {
         container.innerHTML = `<div class="status-message error">Lỗi tải dữ liệu: ${err.message}</div>`;
@@ -294,6 +298,9 @@ function renderCards(container, data, sheetName) {
                 <div class="card-actions">
                     <button class="btn-icon" onclick="openDriveLink('${item.video_url || item.Video_url || item.Link_on_drive || ''}')" title="View on Drive">
                         <i class="fas fa-external-link-alt"></i>
+                    </button>
+                    <button class="btn-icon publish" onclick="publishPost(event, '${sheetName}', ${index})" title="Đăng ngay">
+                        <i class="fas fa-paper-plane"></i>
                     </button>
                     <button class="btn-icon delete" onclick="deleteRow('${sheetName}', ${index})" title="Delete">
                         <i class="fas fa-trash-alt"></i>
@@ -1061,6 +1068,115 @@ async function deleteConfigRow(sheetName, stt) {
             loadConfigData(sheetName);
         } else {
             alert('Lỗi khi xóa.');
+        }
+    } catch (e) {
+        alert('Lỗi hệ thống.');
+    }
+}
+
+// --- DỊCH VỤ ĐĂNG BÀI (POST SERVICE UI) ---
+
+async function publishPost(event, sheetName, index) {
+    if (event) event.stopPropagation();
+
+    if (!confirm(`Bạn có chắc muốn ĐĂNG bài viết này lên ${sheetName === 'Facebook_db' ? 'Facebook' : 'YouTube'} không?`)) {
+        return;
+    }
+
+    const btn = event.currentTarget;
+    const originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i>';
+
+    try {
+        const res = await fetch('/api/v2/post/publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sheet_name: sheetName, index: index })
+        });
+
+        const result = await res.json();
+        if (res.ok) {
+            alert('🚀 Đăng bài thành công!');
+            loadSheetData(sheetName); // Refresh card status
+        } else {
+            alert('❌ Lỗi đăng bài: ' + (result.error || 'Unknown error'));
+        }
+    } catch (err) {
+        alert('❌ Lỗi kết nối server.');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+    }
+}
+
+function renderHistory(container, data) {
+    if (!data || !Array.isArray(data) || data.length === 0) {
+        container.innerHTML = '<p class="empty-state"><i class="fas fa-info-circle"></i> Chưa có lịch sử bài đăng hoặc đang tải dữ liệu...</p>';
+        return;
+    }
+
+    container.innerHTML = data.map((item, index) => {
+        // Xác định nền tảng dựa trên link hoặc nội dung (vì schema mới không có cột platform riêng)
+        const isFacebook = !!item.Facebook_Post_Id;
+        const platformLabel = isFacebook ? 'Facebook' : 'YouTube';
+        const platformClass = isFacebook ? 'facebook' : 'youtube';
+        const postId = isFacebook ? item.Facebook_Post_Id : item.Youtube_Post_Id;
+        const pageOrChannel = isFacebook ? item.Page_name : item.Channel_name;
+
+        return `
+            <div class="content-card history-card">
+                <div class="card-header">
+                    <div class="card-title" title="${item.Name_video}">${item.Name_video || 'No Title'}</div>
+                    <div class="badge badge-${platformClass}">${platformLabel}</div>
+                </div>
+                <div class="card-body">
+                    <div class="history-thumb-wrap">
+                        <img src="${item.Thumbnail || 'https://via.placeholder.com/150'}" alt="Thumbnail" class="history-thumb" onerror="this.src='https://via.placeholder.com/150&text=No+Image'">
+                    </div>
+                    <div class="card-info-item">
+                        <i class="fas fa-user-circle"></i>
+                        <span>Nguồn: ${pageOrChannel || 'N/A'}</span>
+                    </div>
+                    <div class="card-info-item">
+                        <i class="fas fa-hashtag"></i>
+                        <span style="font-size: 10px; opacity: 0.8;">ID: ${postId || 'N/A'}</span>
+                    </div>
+                    <div class="card-info-item">
+                        <i class="fas fa-info-circle"></i>
+                        <span class="status-badge ${item.Status === 'SUCCESS' ? 'status-success' : 'status-fail'}">
+                            ${item.Status || 'UNKNOWN'}
+                        </span>
+                    </div>
+                </div>
+                <div class="card-actions">
+                    <button class="btn-icon" onclick="window.open('${item.Link_On_Platfrom}', '_blank')" title="Xem bài đăng">
+                        <i class="fas fa-external-link-alt"></i>
+                    </button>
+                    <button class="btn-icon edit" onclick="alert('Tính năng chỉnh sửa bài đã đăng đang được cập nhật...')" title="Chỉnh sửa bài">
+                        <i class="fas fa-pencil-alt"></i>
+                    </button>
+                    <button class="btn-icon delete" onclick="deleteHistoryRow(${index})" title="Xoá lịch sử">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function deleteHistoryRow(index) {
+    if (!confirm('Bạn có chắc muốn xoá dòng lịch sử này khỏi bảng tính?')) return;
+
+    try {
+        const res = await fetch(`/api/v2/sheets/Published_History/${index}`, {
+            method: 'DELETE'
+        });
+        if (res.ok) {
+            alert('Đã xoá!');
+            loadSheetData('Published_History');
+        } else {
+            alert('Lỗi khi xoá.');
         }
     } catch (e) {
         alert('Lỗi hệ thống.');
