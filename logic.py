@@ -177,3 +177,19 @@ def background_upload(task_id, form_data, files_data):
     except Exception as e:
         print(f"Lỗi Tác vụ ngầm: {e}")
         tasks[task_id] = {"status": "error", "progress": "Thất bại", "message": str(e)}
+
+def delete_drive_file(file_id):
+    """Xóa hoàn toàn một file hoặc thư mục trên Google Drive"""
+    if not file_id:
+        return False
+    try:
+        creds = get_creds()
+        service = build('drive', 'v3', credentials=creds)
+        # Sử dụng trash=False để xóa vĩnh viễn, hoặc trash=True để chuyển vào thùng rác
+        # Người dùng yêu cầu xoá hẳn nên ta dùng delete
+        service.files().delete(fileId=file_id).execute()
+        print(f"Drive: Đã xóa vĩnh viễn file {file_id}")
+        return True
+    except Exception as e:
+        print(f"Drive Error: Lỗi khi xóa file {file_id}: {e}")
+        return False

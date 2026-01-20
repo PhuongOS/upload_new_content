@@ -408,11 +408,17 @@ function openDriveLink(link) {
 }
 
 async function deleteRow(sheetName, stt) {
-    const confirmed = await showConfirmModal(`Bạn có chắc muốn xóa bài đăng #${stt}?`);
+    const isMediaCalendar = sheetName === 'Media_Calendar';
+    const message = isMediaCalendar
+        ? `Bạn có chắc muốn xóa bài đăng #${stt}? HÀNH ĐỘNG NÀY SẼ XÓA CẢ THƯ MỤC TRÊN DRIVE.`
+        : `Bạn có chắc muốn xóa bài đăng #${stt}?`;
+
+    const confirmed = await showConfirmModal(message, isMediaCalendar);
     if (!confirmed) return;
 
     try {
-        const res = await fetch(`/api/v2/sheets/${sheetName}/${stt}`, {
+        const url = isMediaCalendar ? `/api/v2/sheets/${sheetName}/${stt}?delete_drive=true` : `/api/v2/sheets/${sheetName}/${stt}`;
+        const res = await fetch(url, {
             method: 'DELETE'
         });
         const result = await res.json();
@@ -625,17 +631,26 @@ async function syncToPlatformDb(mediaItem, platform, scheduleTime, isRevoke = fa
 }
 
 // CONFIRM MODAL LOGIC
-function showConfirmModal(message) {
+function showConfirmModal(message, requireText = false) {
     return new Promise((resolve) => {
         const modal = document.getElementById('confirmModal');
         const messageEl = document.getElementById('confirmModalMessage');
         const okBtn = document.getElementById('confirmOkBtn');
         const cancelBtn = document.getElementById('confirmCancelBtn');
+        const textWrap = document.getElementById('confirmTextWrap');
+        const textInput = document.getElementById('confirmTextInput');
 
         messageEl.textContent = message;
+        textInput.value = "";
+        textWrap.style.display = requireText ? 'block' : 'none';
+
         modal.classList.add('visible');
 
         const handleResponse = (result) => {
+            if (result && requireText && textInput.value.trim().toUpperCase() !== 'DELETE') {
+                alert("Vui lòng nhập đúng chữ DELETE để xác nhận!");
+                return;
+            }
             modal.classList.remove('visible');
             resolve(result);
             // Cleanup listeners

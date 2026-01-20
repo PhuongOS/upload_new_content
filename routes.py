@@ -4,7 +4,7 @@ import uuid
 import threading
 from flask import Blueprint, request, jsonify, redirect
 from googleapiclient.discovery import build
-from logic import get_creds, tasks, background_upload, TOKEN_FILE
+from logic import get_creds, tasks, background_upload, delete_drive_file, TOKEN_FILE
 from services.sheet_service import SheetService
 
 # Khởi tạo Blueprint cho các API
@@ -482,7 +482,19 @@ def delete_v2_sheet_row(sheet_name, row_index):
         description: Xóa thành công
     """
     try:
+        # Nếu là Media_Calendar, cần lấy ID Drive trước khi xoá hàng
+        delete_drive = request.args.get('delete_drive', 'false').lower() == 'true'
+        
+        if delete_drive and sheet_name == "Media_Calendar":
+            rows = SheetService.get_all_rows(sheet_name)
+            if row_index < len(rows):
+                media_item = rows[row_index]
+                drive_id = media_item.get('id')
+                if drive_id:
+                    delete_drive_file(drive_id)
+                    print(f"API: Đã yêu cầu xóa Drive ID {drive_id} trước khi xóa hàng.")
+
         SheetService.delete_row(sheet_name, row_index)
-        return jsonify({"message": "Xóa hàng thành công"})
+        return jsonify({"message": "Xóa hàng thành công (kèm Drive nếu có)"})
     except Exception as e:
         return jsonify({"error": str(e)}), 400

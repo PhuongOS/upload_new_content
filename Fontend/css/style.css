@@ -938,6 +938,22 @@ input[type="text"]:focus {
   max-width: 400px;
 }
 
+#confirmTextInput {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  padding: 10px;
+  border-radius: 8px;
+  width: 100%;
+  color: #ef4444;
+  font-weight: 700;
+}
+
+#confirmTextInput:focus {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+  outline: none;
+}
+
 .warning-icon {
   width: 64px;
   height: 64px;
