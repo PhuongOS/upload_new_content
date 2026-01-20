@@ -521,4 +521,8 @@ def ai_generate():
         text = provider.generate_content(user_prompt)
         return jsonify({"result": text})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        error_msg = str(e)
+        status_code = 500
+        if "429" in error_msg or "Too Many Requests" in error_msg:
+            status_code = 429
+        return jsonify({"error": error_msg}), status_code

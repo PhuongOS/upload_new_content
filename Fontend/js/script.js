@@ -818,46 +818,71 @@ async function generateAiHook() {
 
     if (!item) return;
 
-    const apiKey = geminiApiKeyInput.value.trim();
-    if (!apiKey) {
-        alert("Vui lòng cấu hình Gemini API Key trong phần Cài đặt chung!");
+    const rawKeys = geminiApiKeyInput.value.trim();
+    if (!rawKeys) {
+        alert("Vui lòng cấu hình Gemini API Key (ít nhất 1 key) trong phần Cài đặt chung!");
         return;
     }
 
+    const apiKeys = rawKeys.split('\n').map(k => k.trim()).filter(k => k.length > 0);
     const aiBtn = document.getElementById('aiWriteBtn');
     const hookInput = document.getElementById('hookInput');
 
     aiBtn.disabled = true;
     const originalText = aiBtn.innerHTML;
-    aiBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang suy nghĩ...';
 
     const videoName = item.video_name || item.Name_video || "nội dung này";
     const systemPrompt = sheetName === 'Facebook_db' ? fbGeminiSystemPromptInput.value.trim() : ytGeminiSystemPromptInput.value.trim();
     const userPrompt = `Hãy viết một đoạn Hook ngắn gọn (khoảng 2-3 câu) để mô tả cho video có tên: "${videoName}". ${item.hook ? 'Tham khảo nội dung hiện tại: ' + item.hook : ''}`;
 
-    try {
-        const res = await fetch('/api/v2/ai/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                api_key: apiKey,
-                system_prompt: systemPrompt,
-                user_prompt: userPrompt
-            })
-        });
+    let success = false;
+    let lastError = "";
 
-        const data = await res.json();
-        if (res.ok) {
-            hookInput.value = data.result;
-        } else {
-            alert("Lỗi AI: " + data.error);
+    for (let i = 0; i < apiKeys.length; i++) {
+        const apiKey = apiKeys[i];
+        aiBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Thử Key #${i + 1}...`;
+
+        try {
+            const res = await fetch('/api/v2/ai/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    api_key: apiKey,
+                    system_prompt: systemPrompt,
+                    user_prompt: userPrompt
+                })
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                hookInput.value = data.result;
+                success = true;
+                break;
+            } else {
+                if (res.status === 429 || (data.error && data.error.includes("429"))) {
+                    console.warn(`Key #${i + 1} bị giới hạn (429). Đang chuyển sang key tiếp theo...`);
+                    lastError = "Tất cả API Key đều bị giới hạn (429).";
+                    continue;
+                } else {
+                    alert(`Lỗi AI (Key #${i + 1}): ` + data.error);
+                    lastError = data.error;
+                    break;
+                }
+            }
+        } catch (err) {
+            console.error(err);
+            lastError = "Lỗi kết nối server.";
+            continue;
         }
-    } catch (err) {
-        alert("Lỗi kết nối khi gọi AI.");
-    } finally {
-        aiBtn.disabled = false;
-        aiBtn.innerHTML = originalText;
     }
+
+    if (!success && lastError) {
+        alert("Không thể tạo nội dung: " + lastError);
+    }
+
+    aiBtn.disabled = false;
+    aiBtn.innerHTML = originalText;
 }
 // CONFIG VIEW LOGIC
 const configTabBtns = document.querySelectorAll('.config-tab-btn');
