@@ -393,6 +393,51 @@
         </div>
     </div>
 
+    <!-- Edit Post Modal (Published) -->
+    <div id="editPostModal" class="modal-overlay">
+        <div class="modal-content glass-card">
+            <div class="modal-header">
+                <h3><i class="fas fa-edit"></i> Chỉnh sửa bài viết</h3>
+                <button class="btn-close" onclick="closeEditPostModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="edit-post-title-display" class="item-display-name"></p>
+
+                <div class="input-group">
+                    <label>Tiêu đề (Video Title)</label>
+                    <input type="text" id="editPostTitle" placeholder="Nhập tiêu đề...">
+                </div>
+
+                <div class="input-group">
+                    <label>Mô tả / Caption</label>
+                    <textarea id="editPostDesc" rows="5" placeholder="Nhập mô tả nội dung..."></textarea>
+                </div>
+
+                <div class="input-group">
+                    <label>Cập nhật Thumbnail (YouTube Video)</label>
+                    <input type="file" id="editPostThumb" accept="image/*" class="card-select">
+                    <small style="color: rgba(255,255,255,0.5); font-style: italic;">Chỉ hỗ trợ file ảnh (JPG, PNG). Bỏ
+                        qua nếu không thay đổi.</small>
+                </div>
+
+                <div class="input-group">
+                    <label>Privacy Status (YouTube/Facebook)</label>
+                    <select id="editPostPrivacy" class="card-select">
+                        <option value="">Giữ nguyên</option>
+                        <option value="public">Public</option>
+                        <option value="unlisted">Unlisted (YouTube only)</option>
+                        <option value="private">Private</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeEditPostModal()">Hủy</button>
+                <div style="flex:1"></div>
+                <button class="btn btn-primary" id="savePostEditBtn">Lưu thay đổi</button>
+            </div>
+        </div>
+    </div>
+
     <!-- App Script -->
     <script src="js/script.js?v=2.0.0"></script>
 </body>

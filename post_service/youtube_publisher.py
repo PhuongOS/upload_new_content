@@ -48,9 +48,12 @@ class YoutubePublisher:
             print(f"YouTube Upload Error: {e}")
             return {"success": False, "error": str(e)}
 
-    def update_metadata(self, video_id, title=None, description=None, category_id=None):
-        """Cập nhật thông tin cơ bản của video."""
-        # 1. Lấy thông tin hiện tại trước (YouTube yêu cầu gửi lại toàn bộ snippet khi update)
+    def update_metadata(self, video_id, title=None, description=None, category_id=None, privacy_status=None):
+        """
+        Cập nhật thông tin video (Snippet & Status).
+        Hỗ trợ: Title, Description, Category, Privacy (public/private/unlisted).
+        """
+        # 1. Lấy thông tin hiện tại
         try:
             res = self.youtube.videos().list(part="snippet,status", id=video_id).execute()
             if not res['items']:
@@ -58,21 +61,58 @@ class YoutubePublisher:
             
             video = res['items'][0]
             snippet = video['snippet']
+            status = video['status']
             
             # 2. Cập nhật các trường mới
-            if title: snippet['title'] = title
-            if description: snippet['description'] = description
-            if category_id: snippet['categoryId'] = category_id
+            parts_to_update = []
             
+            # Update Snippet
+            if any([title, description, category_id]):
+                if title: snippet['title'] = title
+                if description: snippet['description'] = description
+                if category_id: snippet['categoryId'] = category_id
+                parts_to_update.append("snippet")
+
+            # Update Status (Privacy)
+            if privacy_status:
+                status['privacyStatus'] = privacy_status
+                parts_to_update.append("status")
+            
+            if not parts_to_update:
+                return {"success": False, "error": "No fields to update"}
+
             # 3. Thực hiện update
             update_res = self.youtube.videos().update(
-                part="snippet",
+                part=",".join(parts_to_update),
                 body={
                     "id": video_id,
-                    "snippet": snippet
+                    "snippet": snippet,
+                    "status": status
                 }
             ).execute()
             return {"success": True, "data": update_res}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def get_video_details(self, video_id):
+        """
+        Lấy thông tin chi tiết video (bao gồm Thumbnail URL).
+        """
+        try:
+            res = self.youtube.videos().list(part="snippet,status", id=video_id).execute()
+            if res['items']:
+                item = res['items'][0]
+                thumbnails = item['snippet']['thumbnails']
+                # Lấy ảnh chất lượng cao nhất có thể
+                thumb_url = thumbnails.get('maxres', thumbnails.get('high', thumbnails.get('medium', thumbnails.get('default'))))['url']
+                return {
+                    "success": True, 
+                    "title": item['snippet']['title'],
+                    "description": item['snippet']['description'],
+                    "privacy": item['status']['privacyStatus'],
+                    "thumbnail_url": thumb_url
+                }
+            return {"success": False, "error": "Video not found"}
         except Exception as e:
             return {"success": False, "error": str(e)}
 

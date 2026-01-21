@@ -1257,23 +1257,23 @@ function renderHistory(container, data) {
         const gridHtml = items.map((item) => {
             const realIndex = data.indexOf(item);
             const isFacebook = !!item.Facebook_Post_Id;
-            const postId = isFacebook ? item.Facebook_Post_Id : item.Youtube_Post_Id;
-            const pageOrChannel = isFacebook ? item.Page_name : item.Channel_name;
             const platformClass = isFacebook ? 'facebook' : 'youtube';
+            const scheduledStatus = item.Status === 'SCHEDULED';
 
-            const managementActions = isFacebook ? `
+            // Generic Management Actions
+            const managementActions = `
                 <div class="card-mgmt-actions">
-                    <button class="btn-icon-tiny" onclick="syncFBPost(${realIndex})" title="Đồng bộ Thumbnail">
+                    <button class="btn-icon-tiny" onclick="syncThumbnail(${realIndex})" title="Đồng bộ Thumbnail">
                         <i class="fas fa-sync-alt"></i>
                     </button>
-                    <button class="btn-icon-tiny" onclick="openEditFBModal(${realIndex})" title="Sửa Caption">
+                    <button class="btn-icon-tiny" onclick="openEditPostModal(${realIndex})" title="Sửa nội dung">
                         <i class="fas fa-edit"></i>
                     </button>
-                    <button class="btn-icon-tiny danger" onclick="deleteFBPost(${realIndex})" title="Xoá khỏi Facebook">
-                        <i class="fab fa-facebook-f"></i><i class="fas fa-times tiny-overlay"></i>
+                    <button class="btn-icon-tiny danger" onclick="deletePublishedPost(${realIndex}, '${platformClass}')" title="Xoá bài đăng (Platform + Sheet)">
+                        <i class="fas fa-trash-alt"></i>
                     </button>
                 </div>
-            ` : '';
+            `;
 
             return `
             <div class="content-card history-card premium-glass">
@@ -1282,9 +1282,13 @@ function renderHistory(container, data) {
                     <div class="platform-icon-overlay">
                         <i class="${isFacebook ? 'fab fa-facebook' : 'fab fa-youtube'}"></i>
                     </div>
+                    ${scheduledStatus ? `
+                    <div class="scheduled-overlay" title="Bài viết đang chờ đăng">
+                        <i class="fas fa-clock"></i>
+                    </div>` : `
                     <div class="play-button-overlay">
                         <i class="fas fa-play"></i>
-                    </div>
+                    </div>`}
                     ${managementActions}
                 </div>
                 
@@ -1292,8 +1296,8 @@ function renderHistory(container, data) {
                     <div class="card-title-line" title="${item.Name_video}">${item.Name_video || 'No Title'}</div>
                     
                     <div class="status-row">
-                        <span class="status-label-glass ${item.Status === 'SUCCESS' ? 'status-success' : 'status-fail'}">
-                            <span class="dot"></span> ${item.Status === 'SUCCESS' ? 'Success' : 'Failed'}
+                        <span class="status-label-glass ${item.Status === 'SUCCESS' ? 'status-success' : (scheduledStatus ? 'status-warning' : 'status-fail')}">
+                            <span class="dot"></span> ${item.Status || 'Unknown'}
                         </span>
                     </div>
 
@@ -1305,8 +1309,8 @@ function renderHistory(container, data) {
                     </div>
                 </div>
                 
-                <button class="btn-delete-history" onclick="deleteHistoryRow(${realIndex})" title="Xoá lịch sử">
-                    <i class="fas fa-trash-alt"></i>
+                <button class="btn-delete-history" onclick="deleteHistoryRow(${realIndex})" title="Chỉ xoá dòng lịch sử (Không xoá bài)">
+                    <i class="fas fa-eraser"></i>
                 </button>
             </div>`;
         }).join('');
@@ -1330,98 +1334,170 @@ function renderHistory(container, data) {
     container.innerHTML = fullHtml || '<p class="empty-state">Không có dữ liệu lịch sử.</p>';
 }
 
-async function deleteHistoryRow(index) {
-    const confirmed = await showConfirmModal({
-        title: "Xóa lịch sử?",
-        message: "Bạn có chắc muốn xoá dòng lịch sử này khỏi bảng tính?",
-        type: "danger",
-        okText: "Xóa"
-    });
-    if (!confirmed) return;
+// --- GENERIC POST MANAGEMENT (FB & YT) ---
 
+let activeEditPostIndex = null;
+
+async function syncThumbnail(index) {
+    addProgressItem(`🔄 Đang đồng bộ Thumbnail bài viết #${index}...`);
     try {
-        const res = await fetch(`/api/v2/sheets/Published_History/${index}`, {
-            method: 'DELETE'
-        });
-        if (res.ok) {
-            alert('Đã xoá!');
-            loadSheetData('Published_History');
-        } else {
-            alert('Lỗi khi xoá.');
-        }
-    } catch (e) {
-        alert('Lỗi hệ thống.');
-    }
-}
-
-// --- FACEBOOK POST MANAGEMENT ---
-
-async function syncFBPost(index) {
-    addProgressItem(`🔄 Đang đồng bộ thông tin bài viết #${index}...`);
-    try {
-        const res = await fetch(`/api/v2/facebook/post/${index}`);
+        const res = await fetch(`/api/v2/post/sync-thumbnail/${index}`, { method: 'POST' });
         const result = await res.json();
         if (res.ok) {
-            addProgressItem(`✅ Đồng bộ thành công bài viết #${index}`);
+            addProgressItem(`✅ Đồng bộ Thumbnail thành công!`);
             loadSheetData('Published_History');
         } else {
             alert("Lỗi đồng bộ: " + result.error);
         }
     } catch (e) {
-        console.error(e);
         alert("Lỗi kết nối server.");
     }
 }
 
-async function openEditFBModal(index) {
+async function openEditPostModal(index) {
     const rows = await (await fetch('/api/v2/sheets/Published_History')).json();
     const item = rows[index];
     if (!item) return;
 
-    const newMessage = prompt("Nhập nội dung mới cho bài viết:", item.Name_video);
-    if (newMessage === null || newMessage === item.Name_video) return;
+    activeEditPostIndex = index;
 
-    addProgressItem(`✏️ Đang chỉnh sửa bài viết #${index}...`);
+    // Reset fields & Show Loading
+    document.getElementById('edit-post-title-display').textContent = item.Name_video || `Bài viết #${index}`;
+    document.getElementById('editPostTitle').value = "Đang tải...";
+    document.getElementById('editPostDesc').value = "Đang tải nội dung từ Platform...";
+    document.getElementById('editPostPrivacy').value = "";
+    document.getElementById('savePostEditBtn').disabled = true;
+
+    document.getElementById('editPostModal').classList.add('visible');
+
+    // Fetch details from backend
     try {
-        const res = await fetch(`/api/v2/facebook/post/${index}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: newMessage })
-        });
+        const res = await fetch(`/api/v2/post/details/${index}`);
         const result = await res.json();
-        if (res.ok) {
-            addProgressItem(`✅ Đã chỉnh sửa bài viết #${index}`);
-            loadSheetData('Published_History');
+
+        if (res.ok && result.success) {
+            const data = result.data;
+            document.getElementById('editPostTitle').value = data.title || "";
+            document.getElementById('editPostDesc').value = data.description || "";
+            // Privacy mapping if needed, or just set if valid
+            const p = data.privacy;
+            if (p === 'public' || p === 'private' || p === 'unlisted') {
+                document.getElementById('editPostPrivacy').value = p;
+            }
         } else {
-            alert("Lỗi khi sửa: " + result.error);
+            document.getElementById('editPostDesc').value = "Không thể tải nội dung: " + (result.error || "Unknown");
         }
     } catch (e) {
-        alert("Lỗi kết nối server.");
+        document.getElementById('editPostDesc').value = "Lỗi kết nối: " + e.message;
+    } finally {
+        document.getElementById('savePostEditBtn').disabled = false;
     }
 }
 
-async function deleteFBPost(index) {
+function closeEditPostModal() {
+    document.getElementById('editPostModal').classList.remove('visible');
+    activeEditPostIndex = null;
+}
+
+document.getElementById('savePostEditBtn').onclick = async () => {
+    if (activeEditPostIndex === null) return;
+
+    const title = document.getElementById('editPostTitle').value;
+    const desc = document.getElementById('editPostDesc').value;
+    const privacy = document.getElementById('editPostPrivacy').value;
+    const thumbFile = document.getElementById('editPostThumb').files[0];
+
+    const btn = document.getElementById('savePostEditBtn');
+    btn.disabled = true;
+    btn.innerHTML = "Đang lưu...";
+
+    try {
+        let res;
+        // Nếu có file thumbnail, dùng FormData
+        if (thumbFile) {
+            const formData = new FormData();
+            formData.append('title', title);
+            formData.append('description', desc);
+            formData.append('privacy', privacy);
+            formData.append('thumbnail', thumbFile);
+
+            res = await fetch(`/api/v2/post/update/${activeEditPostIndex}`, {
+                method: 'POST',
+                body: formData // Content-Type tự động set multipart/form-data
+            });
+        } else {
+            // Không có file, dùng JSON như cũ
+            res = await fetch(`/api/v2/post/update/${activeEditPostIndex}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: title,
+                    description: desc,
+                    privacy: privacy
+                })
+            });
+        }
+
+        const result = await res.json();
+
+        if (res.ok) {
+            alert("Cập nhật thành công!");
+            closeEditPostModal();
+            loadSheetData('Published_History');
+        } else {
+            alert("Lỗi: " + result.error);
+        }
+    } catch (e) {
+        alert("Lỗi hệ thống: " + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = "Lưu thay đổi";
+    }
+};
+
+async function deletePublishedPost(index, platform) {
     const confirmed = await showConfirmModal({
-        title: "Xóa khỏi Facebook?",
-        message: "Hành động này sẽ XÓA bài viết trực tiếp trên Facebook và gỡ khỏi lịch sử. Bạn có chắc chắn?",
+        title: "Xóa bài đăng?",
+        message: `Hành động này sẽ XÓA bài viết trên ${platform.toUpperCase()} và xóa khỏi lịch sử. Không thể hoàn tác!`,
         type: "danger",
         okText: "Xóa vĩnh viễn"
     });
     if (!confirmed) return;
 
-    addProgressItem(`🗑️ Đang xóa bài viết #${index} khỏi Facebook...`);
+    addProgressItem(`🗑️ Đang xóa bài viết #${index} khỏi Platform & History...`);
     try {
-        const res = await fetch(`/api/v2/facebook/post/${index}`, {
+        const res = await fetch(`/api/v2/post/delete/${index}`, {
             method: 'DELETE'
         });
         const result = await res.json();
         if (res.ok) {
-            addProgressItem(`✅ Đã xóa bài viết #${index} khỏi Facebook và lịch sử.`);
+            addProgressItem(`✅ Đã xóa thành công bài viết #${index}.`);
             loadSheetData('Published_History');
         } else {
             alert("Lỗi khi xóa: " + result.error);
         }
     } catch (e) {
         alert("Lỗi kết nối server.");
+    }
+}
+
+async function deleteHistoryRow(index) {
+    const confirmed = await showConfirmModal({
+        title: "Xóa lịch sử?",
+        message: "Bạn có chắc muốn xoá dòng lịch sử này? (Bài viết trên Platform vẫn giữ nguyên)",
+        type: "warning",
+        okText: "Xóa dòng"
+    });
+    if (!confirmed) return;
+
+    try {
+        const res = await fetch(`/api/v2/sheets/Published_History/${index}`, { method: 'DELETE' });
+        if (res.ok) {
+            loadSheetData('Published_History');
+        } else {
+            alert('Lỗi khi xoá.');
+        }
+    } catch (e) {
+        alert('Lỗi hệ thống.');
     }
 }

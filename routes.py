@@ -600,3 +600,48 @@ def facebook_post_delete(index):
     if res["success"]:
         return jsonify(res)
     return jsonify(res), 400
+
+# --- UNIFIED POST MANAGEMENT API (Facebook & YouTube) ---
+
+@api_bp.route('/api/v2/post/update/<int:index>', methods=['POST'])
+def post_update(index):
+    """
+    Cập nhật nội dung bài viết (Title, Description, Privacy, Thumbnail) cho FB/YT.
+    Payload: Multipart (nếu có file) hoặc JSON.
+    """
+    # Xử lý dữ liệu từ Form (Multipart) hoặc JSON
+    if request.content_type.startswith('multipart/form-data'):
+        data = request.form.to_dict()
+        thumbnail = request.files.get('thumbnail')
+    else:
+        data = request.json
+        thumbnail = None
+
+    res = post_manager.update_post_content("Published_History", index, data, thumbnail_file=thumbnail)
+    if res["success"]:
+        return jsonify(res)
+    return jsonify(res), 400
+
+@api_bp.route('/api/v2/post/delete/<int:index>', methods=['DELETE'])
+def post_delete_published(index):
+    """Xóa bài viết đã đăng khỏi Platform và History."""
+    res = post_manager.delete_published_post("Published_History", index)
+    if res["success"]:
+        return jsonify(res)
+    return jsonify(res), 400
+
+@api_bp.route('/api/v2/post/sync-thumbnail/<int:index>', methods=['POST'])
+def post_sync_thumbnail(index):
+    """Đồng bộ thumbnail từ Platform về Sheet."""
+    res = post_manager.sync_thumbnail("Published_History", index)
+    if res["success"]:
+        return jsonify(res)
+    return jsonify(res), 400
+
+@api_bp.route('/api/v2/post/details/<int:index>', methods=['GET'])
+def post_get_details(index):
+    """Lấy thông tin chi tiết bài viết từ Platform."""
+    res = post_manager.get_post_details("Published_History", index)
+    if res["success"]:
+        return jsonify(res)
+    return jsonify(res), 400

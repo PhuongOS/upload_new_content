@@ -235,5 +235,59 @@ class FacebookPublisher:
         return self._make_request(post_id, data=payload)
 
     def delete_post(self, post_id):
-        """Xóa bài viết trên Facebook."""
+        """Xóa bài viết trên Facebook (Generic for any node)."""
         return self._make_request(post_id, method="DELETE")
+    
+    # Alias cho dễ đọc code
+    delete_node = delete_post
+
+    def update_video_metadata(self, video_id, title=None, description=None):
+        """
+        Cập nhật tiêu đề và mô tả cho Video đã đăng.
+        Endpoint: POST /{video-id}
+        """
+        payload = {}
+        if title: payload["title"] = title
+        if description: payload["description"] = description
+        
+        if not payload:
+            return {"success": False, "error": "Không có dữ liệu update (title/desc)"}
+            
+        return self._make_request(video_id, data=payload)
+
+    def get_video_thumbnail(self, video_id):
+        """
+        Lấy URL thumbnail hiện tại của video từ Facebook.
+        Sử dụng field 'picture' hoặc 'thumbnails' edge.
+        """
+        # Cách 1: Lấy field picture (small/default thumb)
+        res = self._make_request(video_id, method="GET", params={"fields": "picture,thumbnails"})
+        if res["success"]:
+            data = res["data"]
+            # Ưu tiên lấy ảnh to nhất từ edge thumbnails nếu có
+            if "thumbnails" in data and "data" in data["thumbnails"]:
+                thumbs = data["thumbnails"]["data"]
+                # Sort theo height/width giảm dần để lấy ảnh rõ nhất
+                thumbs.sort(key=lambda x: x.get("height", 0), reverse=True)
+                if thumbs:
+                    return {"success": True, "thumbnail_url": thumbs[0]["uri"]}
+            
+            # Fallback về picture field
+            return {"success": True, "thumbnail_url": data.get("picture")}
+        return res
+
+    def set_video_thumbnail(self, video_id, image_path):
+        """
+        Cập nhật thumbnail cho Video trên Facebook.
+        API: POST /<video_id> with source/thumb
+        Note: Graph API cho phép upload thumb custom cho video.
+        """
+        try:
+            endpoint = video_id
+            # Theo tài liệu: POST /{video-id} với field 'thumb' là file handle
+            files = {
+                'thumb': open(image_path, 'rb')
+            }
+            return self._make_request(endpoint, data={}, files=files)
+        except Exception as e:
+            return {"success": False, "error": f"Lỗi set thumbnail FB: {str(e)}"}

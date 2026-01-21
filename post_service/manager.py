@@ -1,5 +1,6 @@
 import json
 import datetime
+import time
 import os
 from googleapiclient.discovery import build
 from .facebook_publisher import FacebookPublisher
@@ -47,6 +48,15 @@ class PostManager:
                 if len(extracted_id) >= 25 and len(extracted_id) <= 50:
                     return extracted_id
         return None
+
+    def _convert_to_unix(self, date_str):
+        """Chuyển đổi chuỗi ngày tháng (DD/MM/YYYY HH:MM) sang Unix Timestamp."""
+        if not date_str: return None
+        try:
+            dt = datetime.datetime.strptime(date_str, "%d/%m/%Y %H:%M")
+            return dt.timestamp()
+        except ValueError:
+            return None
 
     def get_media_type(self, drive_id):
         """Kiểm tra MimeType của file trên Drive để xác định là Video hay Image."""
@@ -122,16 +132,31 @@ class PostManager:
             item = rows[index]
             print(f"[PostManager] Dữ liệu dòng: {json.dumps(item)[:200]}...")
             
+            # Xử lý Hẹn giờ (Scheduling)
+            scheduled_unix = None
+            scheduled_iso = None
+            calendar_str = item.get('calendar')
+            if calendar_str:
+                unix = self._convert_to_unix(calendar_str)
+                if unix:
+                    now = datetime.datetime.now().timestamp()
+                    # Facebook yêu cầu > 10 phút (600s), Youtube yêu cầu tương lai
+                    if unix > now + 600: 
+                        scheduled_unix = unix
+                        # Youtube cần ISO8601
+                        scheduled_iso = datetime.datetime.fromtimestamp(unix).isoformat() + 'Z'
+                        print(f"[PostManager] 🕒 Đã lên lịch đăng lúc: {scheduled_iso}")
+
             if "Facebook" in sheet_name:
-                return self._handle_facebook_publish(item, sheet_name, index, task_id)
+                return self._handle_facebook_publish(item, sheet_name, index, task_id, scheduled_time=scheduled_unix)
             elif "Youtube" in sheet_name:
-                return self._handle_youtube_publish(item, sheet_name, index, task_id)
+                return self._handle_youtube_publish(item, sheet_name, index, task_id, scheduled_time=scheduled_iso)
                 
             return {"success": False, "error": "Nền tảng không được hỗ trợ."}
         except Exception as e:
             return {"success": False, "error": f"Lỗi hệ thống: {str(e)}"}
 
-    def _handle_facebook_publish(self, item, sheet_name, index, task_id=None):
+    def _handle_facebook_publish(self, item, sheet_name, index, task_id=None, scheduled_time=None):
         """Xử lý đăng bài lên Facebook và ghi lịch sử với logging chi tiết."""
         def update_task_msg(msg):
             if task_id and task_id in tasks:
@@ -255,23 +280,23 @@ class PostManager:
                 if local_paths:
                     if len(local_paths) > 1 or post_type == "Album":
                         update_task_msg(f"Đang tạo Album với {len(local_paths)} ảnh...")
-                        res = publisher.publish_album(image_paths=local_paths, message=message)
+                        res = publisher.publish_album(image_paths=local_paths, message=message, scheduled_time=scheduled_time)
                     else:
                         # Ảnh đơn
                         update_task_msg("Đang upload ảnh đơn lên Facebook...")
-                        res = publisher.publish_image(local_paths[0], caption=message) # Cần update publish_image hỗ trợ path
+                        res = publisher.publish_image(local_paths[0], caption=message, scheduled_time=scheduled_time) 
                         # Fallback nếu publish_image chưa hỗ trợ path -> dùng publish_album với 1 ảnh cũng OK
                         if not res.get("success"):
-                             res = publisher.publish_album(image_paths=local_paths, message=message)
+                             res = publisher.publish_album(image_paths=local_paths, message=message, scheduled_time=scheduled_time)
 
                 elif image_urls and not local_paths:
                      # Trường hợp 100% là URL public (không phải Drive)
                      if len(image_urls) > 1:
                          update_task_msg(f"Đang tạo Album với {len(image_urls)} URLs...")
-                         res = publisher.publish_album(image_urls=image_urls, message=message)
+                         res = publisher.publish_album(image_urls=image_urls, message=message, scheduled_time=scheduled_time)
                      else:
                          update_task_msg("Đang đăng ảnh từ URL...")
-                         res = publisher.publish_image(image_urls[0], caption=message)
+                         res = publisher.publish_image(image_urls[0], caption=message, scheduled_time=scheduled_time)
                 else:
                     return {"success": False, "error": "Không tìm thấy ảnh hợp lệ để đăng."}
             finally:
@@ -282,7 +307,7 @@ class PostManager:
 
         else:
             update_task_msg("Đang đăng Status (Text)...")
-            res = publisher.publish_status(message)
+            res = publisher.publish_status(message, scheduled_time=scheduled_time)
 
         if res["success"]:
             post_id = res["data"].get("id") or res["data"].get("video_id")
@@ -297,7 +322,7 @@ class PostManager:
                 "Facebook_Post_Id": post_id,
                 "Thumbnail": item.get('thumbnail_url'),
                 "Link_On_Platfrom": f"https://facebook.com/{post_id}",
-                "Status": "SUCCESS"
+                "Status": "SCHEDULED" if scheduled_time else "SUCCESS"
             }
             
             update_task_msg("Đang ghi lịch sử và cập nhật trạng thái...")
@@ -311,7 +336,7 @@ class PostManager:
         
         return res
 
-    def _handle_youtube_publish(self, item, sheet_name, index, task_id=None):
+    def _handle_youtube_publish(self, item, sheet_name, index, task_id=None, scheduled_time=None):
         """Xử lý đăng bài lên YouTube và ghi lịch sử với logging chi tiết."""
         def update_task_msg(msg):
             if task_id and task_id in tasks:
@@ -349,7 +374,8 @@ class PostManager:
             res = publisher.upload_video(
                 file_path=temp_path,
                 title=item.get('video_name', 'No Title'),
-                description=item.get('hook', '')
+                description=item.get('hook', ''),
+                scheduled_time=scheduled_time
             )
 
             if os.path.exists(temp_path):
@@ -378,7 +404,7 @@ class PostManager:
                     "Youtube_Post_Id": video_id,
                     "Thumbnail": thumb_url,
                     "Link_On_Platfrom": f"https://youtube.com/watch?v={video_id}",
-                    "Status": "SUCCESS"
+                    "Status": "SCHEDULED" if scheduled_time else "SUCCESS"
                 }
                 
                 update_task_msg("Đang ghi lịch sử và cập nhật trạng thái...")
@@ -498,6 +524,230 @@ class PostManager:
                 return {"success": True}
             
             return res
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def update_post_content(self, sheet_name, index, data, thumbnail_file=None):
+        """
+        Cập nhật nội dung bài viết (Title, Description, Privacy, Thumbnail) cho cả FB và YT.
+        """
+        try:
+            rows = SheetService.get_all_rows(self.HISTORY_SHEET)
+            if index >= len(rows): return {"success": False, "error": "Index out of range"}
+            
+            item = rows[index]
+            
+            title = data.get('title')
+            description = data.get('description')
+            privacy = data.get('privacy') # public, private, unlisted
+
+            # Xử lý Thumbnail File (Lưu tạm)
+            temp_thumb_path = None
+            if thumbnail_file:
+                filename = f"thumb_{index}_{int(time.time())}.jpg"
+                temp_thumb_path = os.path.join(".", filename)
+                thumbnail_file.save(temp_thumb_path)
+
+            try:
+                if item.get("Page_Id"): # Facebook
+                    page_id = item.get("Page_Id")
+                    token = item.get("Access_token")
+                    post_id = item.get("Facebook_Post_Id")
+                    
+                    if not post_id: return {"success": False, "error": "No Post ID"}
+                    
+                    publisher = FacebookPublisher(page_id, token)
+                    # FB Video dùng update_video_metadata
+                    res = publisher.update_post_metadata(post_id, message=description)
+                    
+                    if item.get("Type_conten") == "Video":
+                        publisher.update_video_metadata(post_id, title=title, description=description)
+                        
+                        # Update Thumbnail nếu có
+                        if temp_thumb_path:
+                            print(f"[Facebook] Updating thumbnail for {post_id}...")
+                            thumb_res = publisher.set_video_thumbnail(post_id, temp_thumb_path)
+                            if not thumb_res["success"]:
+                                print(f"[Facebook] Thumbnail Warning: {thumb_res.get('error')}")
+                    
+                    if res["success"]:
+                        if description: item["Name_video"] = description[:100]
+                        SheetService.update_row(self.HISTORY_SHEET, index, item)
+                    return res
+
+                elif item.get("Channel_Id"): # YouTube
+                    # Logic xác thực
+                    creds = get_creds()
+                    publisher = YoutubePublisher(creds)
+                    video_id = item.get("Youtube_Post_Id")
+                    
+                    if not video_id: return {"success": False, "error": "No Video ID"}
+                    
+                    # 1. Update Metadata
+                    res = publisher.update_metadata(video_id, title=title, description=description, privacy_status=privacy)
+                    
+                    # 2. Update Thumbnail (nếu có)
+                    if temp_thumb_path:
+                        print(f"[YouTube] Updating thumbnail for {video_id}...")
+                        thumb_res = publisher.set_thumbnail(video_id, temp_thumb_path)
+                        if not thumb_res["success"]:
+                            print(f"[YouTube] Thumbnail Warning: {thumb_res.get('error')}")
+                            # Không return error ngay nếu metadata success, chỉ cảnh báo?
+                            # Hoặc gộp error
+                    
+                    if res["success"]:
+                        if title: item["Name_video"] = title
+                        SheetService.update_row(self.HISTORY_SHEET, index, item)
+                    return res
+                    
+                return {"success": False, "error": "Unknown Platform"}
+
+            finally:
+                # Dọn dẹp file tạm
+                if temp_thumb_path and os.path.exists(temp_thumb_path):
+                    os.remove(temp_thumb_path)
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def delete_published_post(self, sheet_name, index):
+        """
+        Xóa bài viết đã đăng (FB/YT) và xóa dòng trong History.
+        """
+        try:
+            rows = SheetService.get_all_rows(self.HISTORY_SHEET)
+            if index >= len(rows): return {"success": False, "error": "Index out of range"}
+            item = rows[index]
+            
+            res = {"success": False}
+
+            if item.get("Page_Id"): # Facebook
+                page_id = item.get("Page_Id")
+                token = item.get("Access_token")
+                post_id = item.get("Facebook_Post_Id")
+                if post_id and token:
+                    publisher = FacebookPublisher(page_id, token)
+                    res = publisher.delete_node(post_id)
+
+            elif item.get("Channel_Id"): # YouTube
+                video_id = item.get("Youtube_Post_Id")
+                if video_id:
+                    creds = get_creds()
+                    publisher = YoutubePublisher(creds)
+                    res = publisher.delete_video(video_id)
+            
+            # Xóa trong Sheet bất kể API success hay fail (để dọn rác)
+            # Hoặc chỉ xóa nếu success? User yêu cầu xóa bài post thành công
+            # Tốt nhất là xóa dòng nếu API OK hoặc API báo không tìm thấy (đã xóa)
+            if res.get("success") or "NOT_FOUND" in str(res.get("error", "")):
+                 SheetService.delete_row(self.HISTORY_SHEET, index)
+                 return {"success": True}
+            
+            return res
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def sync_thumbnail(self, sheet_name, index):
+        """
+        Đồng bộ Thumbnail từ Platform về Sheet.
+        """
+        try:
+            rows = SheetService.get_all_rows(self.HISTORY_SHEET)
+            if index >= len(rows): return {"success": False, "error": "Index out of range"}
+            item = rows[index]
+            
+            thumb_url = None
+
+            if item.get("Page_Id"): # Facebook
+                page_id = item.get("Page_Id")
+                token = item.get("Access_token")
+                post_id = item.get("Facebook_Post_Id")
+                
+                if post_id:
+                    publisher = FacebookPublisher(page_id, token)
+                    # Thử lấy video thumbnail trước
+                    if item.get("Type_conten") == "Video":
+                        res = publisher.get_video_thumbnail(post_id)
+                        if res["success"]: thumb_url = res.get("thumbnail_url")
+                    
+                    # Nếu chưa có, lấy post picture (cho image post)
+                    if not thumb_url:
+                        res = publisher.get_post(post_id, fields="full_picture")
+                        if res["success"]: thumb_url = res["data"].get("full_picture")
+
+            elif item.get("Channel_Id"): # YouTube
+                video_id = item.get("Youtube_Post_Id")
+                if video_id:
+                    creds = get_creds()
+                    publisher = YoutubePublisher(creds)
+                    res = publisher.get_video_details(video_id)
+                    if res["success"]:
+                        thumb_url = res.get("thumbnail_url")
+
+            if thumb_url:
+                item["Thumbnail"] = thumb_url
+                SheetService.update_row(self.HISTORY_SHEET, index, item)
+                return {"success": True, "thumbnail": thumb_url}
+            
+            return {"success": False, "error": "Thumbnail not found"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def get_post_details(self, sheet_name, index):
+        """
+        Lấy thông tin chi tiết hiện tại của bài viết từ Platform (Title, Description, Privacy).
+        """
+        try:
+            rows = SheetService.get_all_rows(self.HISTORY_SHEET)
+            if index >= len(rows): return {"success": False, "error": "Index out of range"}
+            item = rows[index]
+            
+            data = {"title": "", "description": "", "privacy": ""}
+
+            if item.get("Page_Id"): # Facebook
+                page_id = item.get("Page_Id")
+                token = item.get("Access_token")
+                post_id = item.get("Facebook_Post_Id")
+                
+                if post_id and token:
+                    publisher = FacebookPublisher(page_id, token)
+                    # Xác định là Video hay Post thường
+                    is_video = item.get("Type_conten") == "Video"
+                    
+                    if is_video:
+                        # Lấy thông tin Video
+                        res = publisher._make_request(post_id, method="GET", params={"fields": "title,description,published"})
+                        if res["success"]:
+                            d = res["data"]
+                            data["title"] = d.get("title", "")
+                            data["description"] = d.get("description", "")
+                            # FB Video Privacy logic is complex, simplify for now
+                            data["privacy"] = "public" # Placeholder
+                            return {"success": True, "data": data}
+                    else:
+                        # Lấy thông tin Post
+                        res = publisher.get_post(post_id, fields="message,privacy")
+                        if res["success"]:
+                            d = res["data"]
+                            data["description"] = d.get("message", "") # Post uses message
+                            # FB Privacy field structure: {"value": "EVERYONE", ...}
+                            p_val = d.get("privacy", {}).get("value", "")
+                            data["privacy"] = "public" if p_val == "EVERYONE" else "private"
+                            return {"success": True, "data": data}
+
+            elif item.get("Channel_Id"): # YouTube
+                video_id = item.get("Youtube_Post_Id")
+                if video_id:
+                    creds = get_creds()
+                    publisher = YoutubePublisher(creds)
+                    res = publisher.get_video_details(video_id)
+                    if res["success"]:
+                        data["title"] = res.get("title", "")
+                        data["description"] = res.get("description", "")
+                        data["privacy"] = res.get("privacy", "")
+                        return {"success": True, "data": data}
+
+            return {"success": False, "error": "Platform or ID not found"}
         except Exception as e:
             return {"success": False, "error": str(e)}
 
