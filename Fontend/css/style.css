@@ -1219,6 +1219,55 @@ textarea:focus {
   opacity: 1;
 }
 
+.card-mgmt-actions {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: all 0.3s ease;
+  z-index: 5;
+}
+
+.history-card:hover .card-mgmt-actions {
+  opacity: 1;
+}
+
+.btn-icon-tiny {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s ease;
+}
+
+.btn-icon-tiny:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+  transform: scale(1.1);
+}
+
+.btn-icon-tiny.danger:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+}
+
+.tiny-overlay {
+  font-size: 8px;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+
 .card-content-wrap {
   display: flex;
   flex-direction: column;

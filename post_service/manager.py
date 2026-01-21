@@ -357,6 +357,114 @@ class PostManager:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def sync_facebook_post_info(self, index):
+        """
+        Lấy thông tin mới nhất từ Facebook và cập nhật vào Published_History.
+        """
+        try:
+            rows = SheetService.get_all_rows(self.HISTORY_SHEET)
+            if not rows or index >= len(rows):
+                return {"success": False, "error": "Không tìm thấy dòng lịch sử."}
+            
+            item = rows[index]
+            post_id = item.get("Facebook_Post_Id")
+            page_id = item.get("Page_Id")
+            token = item.get("Access_token")
+
+            if not post_id or not token:
+                return {"success": False, "error": "Thiếu Post ID hoặc Access Token."}
+
+            publisher = FacebookPublisher(page_id, token)
+            res = publisher.get_post(post_id)
+            
+            if res["success"]:
+                data = res["data"]
+                # Cập nhật Thumbnail
+                thumb = data.get("full_picture")
+                if not thumb and "attachments" in data:
+                    attachments = data["attachments"].get("data", [])
+                    if attachments:
+                        thumb = attachments[0].get("media", {}).get("image", {}).get("src")
+                
+                if thumb:
+                    item["Thumbnail"] = thumb
+                
+                # Cập nhật Permalink nếu có
+                if data.get("permalink_url"):
+                    item["Link_On_Platfrom"] = data.get("permalink_url")
+                
+                # Cập nhật message (nếu cần đồng bộ text)
+                if data.get("message"):
+                    item["Name_video"] = data.get("message")[:100] # Tạm lấy message làm title nếu trống
+                
+                SheetService.update_row(self.HISTORY_SHEET, index, item)
+                return {"success": True, "data": item}
+            
+            return res
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def edit_facebook_post(self, index, new_message):
+        """
+        Chỉnh sửa nội dung bài viết đã đăng trên Facebook.
+        """
+        try:
+            rows = SheetService.get_all_rows(self.HISTORY_SHEET)
+            if not rows or index >= len(rows):
+                return {"success": False, "error": "Không tìm thấy dòng lịch sử."}
+            
+            item = rows[index]
+            post_id = item.get("Facebook_Post_Id")
+            page_id = item.get("Page_Id")
+            token = item.get("Access_token")
+
+            if not post_id or not token:
+                return {"success": False, "error": "Thiếu Post ID hoặc Access Token."}
+
+            publisher = FacebookPublisher(page_id, token)
+            res = publisher.update_post_metadata(post_id, message=new_message)
+            
+            if res["success"]:
+                # Cập nhật lại trong Sheet
+                item["Name_video"] = new_message[:100] # Update preview name
+                SheetService.update_row(self.HISTORY_SHEET, index, item)
+                return {"success": True}
+            
+            return res
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def delete_facebook_post(self, index):
+        """
+        Xóa bài viết trên Facebook và xóa khỏi Published_History.
+        """
+        try:
+            rows = SheetService.get_all_rows(self.HISTORY_SHEET)
+            if not rows or index >= len(rows):
+                return {"success": False, "error": "Không tìm thấy dòng lịch sử."}
+            
+            item = rows[index]
+            post_id = item.get("Facebook_Post_Id")
+            page_id = item.get("Page_Id")
+            token = item.get("Access_token")
+
+            if not post_id or not token:
+                # Nếu không có ID nhưng vẫn muốn xóa dòng trong Sheet
+                SheetService.delete_row(self.HISTORY_SHEET, index)
+                return {"success": True, "message": "Đã xóa dòng trong Sheet (không tìm thấy ID FB)."}
+
+            publisher = FacebookPublisher(page_id, token)
+            res = publisher.delete_post(post_id)
+            
+            if res["success"] or "error" in res:
+                # Dù lỗi FB (VD bài đã bị xóa thủ công) thì vẫn ưu tiên xóa dòng trong Sheet
+                SheetService.delete_row(self.HISTORY_SHEET, index)
+                return {"success": True}
+            
+            return res
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     def _log_history(self, history_data):
         """Ghi nhật ký bài đăng thành công vào tab Published_History."""
         try:

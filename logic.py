@@ -26,12 +26,10 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 # Lưu ý: Trong môi trường thực tế, nên dùng Database hoặc Redis thay vì biến memory.
 tasks = {}
 
-def get_creds():
+def get_creds(interactive=False):
     """
     Hàm xử lý xác thực Google API.
-    1. Kiểm tra xem đã có file token.json chưa.
-    2. Nếu chưa hoặc token hết hạn, sẽ thực hiện refresh hoặc yêu cầu đăng nhập mới.
-    3. Trả về đối tượng credentials để sử dụng cho các dịch vụ Google.
+    :param interactive: Nếu True, sẽ mở trình duyệt để đăng nhập nếu token không hợp lệ.
     """
     creds = None
     if os.path.exists(TOKEN_FILE):
@@ -40,16 +38,23 @@ def get_creds():
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             from google.auth.transport.requests import Request
-            creds.refresh(Request())
-        else:
+            try:
+                creds.refresh(Request())
+            except Exception:
+                # Nếu refresh thất bại, coi như không có creds hợp lệ
+                if not interactive: return None
+        
+        if not creds or not creds.valid:
+            if not interactive:
+                raise PermissionError("Vui lòng đăng nhập lại Google để tiếp tục.")
+                
             if not os.path.exists(CREDENTIALS_FILE):
                 raise FileNotFoundError(f"Không tìm thấy file credentials tại {CREDENTIALS_FILE}")
                 
             flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
-            # Khởi chạy server xác thực tại port 5001
             creds = flow.run_local_server(port=5001, host='localhost')
         
-        # Lưu lại token để lần sau không cần đăng nhập lại
+        # Lưu lại token
         with open(TOKEN_FILE, 'w') as token:
             token.write(creds.to_json())
             

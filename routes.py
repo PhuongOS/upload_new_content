@@ -14,33 +14,21 @@ api_bp = Blueprint('api', __name__)
 
 @api_bp.route('/api/auth/login')
 def login():
-    """
-    Kích hoạt luồng đăng nhập Google OAuth.
-    ---
-    responses:
-      302:
-        description: Chuyển hướng đến Google Auth hoặc Trang chủ
-    """
     try:
-        get_creds()
+        get_creds(interactive=True)
         return redirect('/')
     except Exception as e:
         return f"Lỗi đăng nhập: {e}", 500
 
 @api_bp.route('/api/auth/status')
 def auth_status():
-    """
-    Kiểm tra trạng thái kết nối với tài khoản Google.
-    ---
-    responses:
-      200:
-        description: Trạng thái kết nối và email người dùng
-    """
     if os.path.exists(TOKEN_FILE):
         try:
-            creds = get_creds()
+            creds = get_creds(interactive=False)
+            if not creds:
+                return jsonify({"connected": False, "reason": "token_invalid"})
+            
             service = build('drive', 'v3', credentials=creds)
-            # Lấy thông tin tài khoản từ Google Drive API
             about = service.about().get(fields="user").execute()
             return jsonify({
                 "connected": True, 
@@ -584,3 +572,31 @@ def post_history():
         return jsonify(data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+@api_bp.route('/api/v2/facebook/post/<int:index>', methods=['GET'])
+def facebook_post_sync(index):
+    """Đồng bộ thông tin bài viết từ Facebook."""
+    res = post_manager.sync_facebook_post_info(index)
+    if res["success"]:
+        return jsonify(res)
+    return jsonify(res), 400
+
+@api_bp.route('/api/v2/facebook/post/<int:index>', methods=['POST'])
+def facebook_post_edit(index):
+    """Chỉnh sửa nội dung bài viết trên Facebook."""
+    data = request.json
+    new_message = data.get("message")
+    if not new_message:
+        return jsonify({"success": False, "error": "Thiếu nội dung tin nhắn mới."}), 400
+        
+    res = post_manager.edit_facebook_post(index, new_message)
+    if res["success"]:
+        return jsonify(res)
+    return jsonify(res), 400
+
+@api_bp.route('/api/v2/facebook/post/<int:index>', methods=['DELETE'])
+def facebook_post_delete(index):
+    """Xóa bài viết trên Facebook và trong lịch sử."""
+    res = post_manager.delete_facebook_post(index)
+    if res["success"]:
+        return jsonify(res)
+    return jsonify(res), 400

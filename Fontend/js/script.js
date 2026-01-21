@@ -1261,6 +1261,20 @@ function renderHistory(container, data) {
             const pageOrChannel = isFacebook ? item.Page_name : item.Channel_name;
             const platformClass = isFacebook ? 'facebook' : 'youtube';
 
+            const managementActions = isFacebook ? `
+                <div class="card-mgmt-actions">
+                    <button class="btn-icon-tiny" onclick="syncFBPost(${realIndex})" title="Đồng bộ Thumbnail">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                    <button class="btn-icon-tiny" onclick="openEditFBModal(${realIndex})" title="Sửa Caption">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="btn-icon-tiny danger" onclick="deleteFBPost(${realIndex})" title="Xoá khỏi Facebook">
+                        <i class="fab fa-facebook-f"></i><i class="fas fa-times tiny-overlay"></i>
+                    </button>
+                </div>
+            ` : '';
+
             return `
             <div class="content-card history-card premium-glass">
                 <div class="card-media-wrap">
@@ -1271,6 +1285,7 @@ function renderHistory(container, data) {
                     <div class="play-button-overlay">
                         <i class="fas fa-play"></i>
                     </div>
+                    ${managementActions}
                 </div>
                 
                 <div class="card-content-wrap">
@@ -1336,5 +1351,77 @@ async function deleteHistoryRow(index) {
         }
     } catch (e) {
         alert('Lỗi hệ thống.');
+    }
+}
+
+// --- FACEBOOK POST MANAGEMENT ---
+
+async function syncFBPost(index) {
+    addProgressItem(`🔄 Đang đồng bộ thông tin bài viết #${index}...`);
+    try {
+        const res = await fetch(`/api/v2/facebook/post/${index}`);
+        const result = await res.json();
+        if (res.ok) {
+            addProgressItem(`✅ Đồng bộ thành công bài viết #${index}`);
+            loadSheetData('Published_History');
+        } else {
+            alert("Lỗi đồng bộ: " + result.error);
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Lỗi kết nối server.");
+    }
+}
+
+async function openEditFBModal(index) {
+    const rows = await (await fetch('/api/v2/sheets/Published_History')).json();
+    const item = rows[index];
+    if (!item) return;
+
+    const newMessage = prompt("Nhập nội dung mới cho bài viết:", item.Name_video);
+    if (newMessage === null || newMessage === item.Name_video) return;
+
+    addProgressItem(`✏️ Đang chỉnh sửa bài viết #${index}...`);
+    try {
+        const res = await fetch(`/api/v2/facebook/post/${index}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: newMessage })
+        });
+        const result = await res.json();
+        if (res.ok) {
+            addProgressItem(`✅ Đã chỉnh sửa bài viết #${index}`);
+            loadSheetData('Published_History');
+        } else {
+            alert("Lỗi khi sửa: " + result.error);
+        }
+    } catch (e) {
+        alert("Lỗi kết nối server.");
+    }
+}
+
+async function deleteFBPost(index) {
+    const confirmed = await showConfirmModal({
+        title: "Xóa khỏi Facebook?",
+        message: "Hành động này sẽ XÓA bài viết trực tiếp trên Facebook và gỡ khỏi lịch sử. Bạn có chắc chắn?",
+        type: "danger",
+        okText: "Xóa vĩnh viễn"
+    });
+    if (!confirmed) return;
+
+    addProgressItem(`🗑️ Đang xóa bài viết #${index} khỏi Facebook...`);
+    try {
+        const res = await fetch(`/api/v2/facebook/post/${index}`, {
+            method: 'DELETE'
+        });
+        const result = await res.json();
+        if (res.ok) {
+            addProgressItem(`✅ Đã xóa bài viết #${index} khỏi Facebook và lịch sử.`);
+            loadSheetData('Published_History');
+        } else {
+            alert("Lỗi khi xóa: " + result.error);
+        }
+    } catch (e) {
+        alert("Lỗi kết nối server.");
     }
 }

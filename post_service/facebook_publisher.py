@@ -218,6 +218,13 @@ class FacebookPublisher:
 
         return self._make_request(endpoint, data=payload)
 
+    def get_post(self, post_id, fields="message,full_picture,attachments,permalink_url,created_time"):
+        """
+        Lấy thông tin chi tiết của một bài viết.
+        """
+        params = {"fields": fields}
+        return self._make_request(post_id, method="GET", params=params)
+
     def update_post_metadata(self, post_id, message=None):
         """
         Cập nhật mô tả (caption/message) của bài viết đã đăng.
