@@ -48,6 +48,22 @@ class PostManager:
                     return extracted_id
         return None
 
+    def get_media_type(self, drive_id):
+        """Kiểm tra MimeType của file trên Drive để xác định là Video hay Image."""
+        if not drive_id: return "Unknown"
+        try:
+            creds = get_creds()
+            service = build('drive', 'v3', credentials=creds)
+            file_meta = service.files().get(fileId=drive_id, fields='mimeType').execute()
+            mime = file_meta.get('mimeType', '')
+            if 'video' in mime:
+                return "Video"
+            elif 'image' in mime:
+                return "Image"
+            return "Other"
+        except:
+            return "Unknown"
+
     def download_from_drive(self, drive_id, output_path):
         """Tải file từ Drive về máy chủ với logging chi tiết."""
         from googleapiclient.http import MediaIoBaseDownload
@@ -131,6 +147,26 @@ class PostManager:
         video_url = item.get('video_url')
         post_type = item.get('post_type', 'Status')
         
+        # Auto-detect logic: Nếu là Status nhưng có link, kiểm tra loại file
+        if post_type in ["", "Status"] and (video_url or item.get('thumbnail_url')):
+            # Lấy link tiềm năng
+            check_url = video_url or item.get('thumbnail_url')
+            # Thử trích xuất ID
+            d_id = self.extract_drive_id(check_url)
+            if d_id:
+                m_type = self.get_media_type(d_id)
+                if m_type == "Video":
+                    post_type = "Video"
+                    print(f"[PostManager] 💡 Auto-detected Post Type: Video")
+                elif m_type == "Image":
+                    # Check nếu là list ảnh (Album)
+                    if isinstance(check_url, str) and check_url.strip().startswith('['):
+                        post_type = "Album"
+                        print(f"[PostManager] 💡 Auto-detected Post Type: Album")
+                    else:
+                        post_type = "Image"
+                        print(f"[PostManager] 💡 Auto-detected Post Type: Image")
+
         print(f"[PostManager] FB Publish - Page ID: {page_id}, Type: {post_type}")
         
         if not page_id or not token:
