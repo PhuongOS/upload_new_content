@@ -50,13 +50,15 @@ class PostManager:
         return None
 
     def _convert_to_unix(self, date_str):
-        """Chuyển đổi chuỗi ngày tháng (DD/MM/YYYY HH:MM) sang Unix Timestamp."""
+        """Chuyển đổi chuỗi ngày tháng (DD/MM/YYYY HH:MM hoặc HH:MM:SS) sang Unix Timestamp."""
         if not date_str: return None
-        try:
-            dt = datetime.datetime.strptime(date_str, "%d/%m/%Y %H:%M")
-            return dt.timestamp()
-        except ValueError:
-            return None
+        for fmt in ["%d/%m/%Y %H:%M", "%d/%m/%Y %H:%M:%S"]:
+            try:
+                dt = datetime.datetime.strptime(date_str, fmt)
+                return dt.timestamp()
+            except ValueError:
+                continue
+        return None
 
     def get_media_type(self, drive_id):
         """Kiểm tra MimeType của file trên Drive để xác định là Video hay Image."""
@@ -220,7 +222,7 @@ class PostManager:
                     res = publisher.publish_reel(video_path=temp_path, description=message)
                 else:
                     update_task_msg("Đang upload Video lên Facebook...")
-                    res = publisher.publish_video(video_path=temp_path, title=video_title, description=message)
+                    res = publisher.publish_video(video_path=temp_path, title=video_title, description=message, scheduled_time=scheduled_time)
             finally:
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
@@ -328,7 +330,7 @@ class PostManager:
             update_task_msg("Đang ghi lịch sử và cập nhật trạng thái...")
             self._log_history(history_data)
             
-            item['status'] = 'PUBLISHED'
+            item['status'] = 'SCHEDULED' if scheduled_time else 'PUBLISHED'
             item['fb_post_id'] = post_id
             SheetService.update_row(sheet_name, index, item)
             
@@ -410,7 +412,7 @@ class PostManager:
                 update_task_msg("Đang ghi lịch sử và cập nhật trạng thái...")
                 self._log_history(history_data)
                 
-                item['status'] = 'PUBLISHED' 
+                item['status'] = 'SCHEDULED' if scheduled_time else 'PUBLISHED'
                 item['yt_video_id'] = video_id 
                 SheetService.update_row(sheet_name, index, item)
                 

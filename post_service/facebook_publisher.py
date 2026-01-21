@@ -79,17 +79,17 @@ class FacebookPublisher:
 
     def publish_video(self, video_path=None, video_url=None, title="", description="", scheduled_time=None):
         """
-        Đăng Video lên Fanpage.
-        Ưu tiên upload file local nếu có video_path.
+        Đăng video lên Page. Hỗ trợ cả file local và URL.
         """
         endpoint = f"{self.page_id}/videos"
         payload = {
             "title": title,
             "description": description
         }
-        
+
         if scheduled_time:
-            payload["scheduled_publish_time"] = scheduled_time
+             payload["published"] = False
+             payload["scheduled_publish_time"] = int(scheduled_time)
             
         if video_path:
             # Upload file local
