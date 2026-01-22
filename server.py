@@ -3,10 +3,23 @@ from flask import Flask, send_from_directory
 from flasgger import Swagger
 from routes import api_bp
 
+from apscheduler.schedulers.background import BackgroundScheduler
+from post_service.manager import PostManager
+
 # Khởi tạo ứng dựng Flask
 app = Flask(__name__, static_url_path='', static_folder='Fontend')
 # Cấu hình Swagger để tự động tạo tài liệu API
 swagger = Swagger(app)
+
+# --- SCHEDULER SETUP ---
+def run_schedule_check():
+    with app.app_context():
+        manager = PostManager()
+        manager.check_status_recur()
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(func=run_schedule_check, trigger="interval", minutes=5)
+scheduler.start()
 
 # Đăng ký tập hợp các API từ file routes.py
 app.register_blueprint(api_bp)

@@ -758,4 +758,99 @@ class PostManager:
         try:
             SheetService.append_row(self.HISTORY_SHEET, history_data)
         except Exception as e:
-            print(f"Lỗi ghi lịch sử: {e}")
+            print(f"[PostManager] ❌ Lỗi khi ghi lịch sử: {e}")
+
+    def check_status_recur(self):
+        """
+        [Background Job] Kiểm tra trạng thái các bài đang SCHEDULED.
+        Nếu đã public thì cập nhật lại Status trong Sheet.
+        
+        Logic Check:
+        - FB Video: published == True
+        - FB Image/Status: is_hidden == False
+        - FB Scheduled Object: is_published == True
+        - FB Reels: has permalink_url
+        - YT: status.privacyStatus == 'public'
+        """
+        try:
+            print("[Scheduler] Đang kiểm tra trạng thái bài đăng...")
+            start_time = time.time()
+            rows = SheetService.get_all_rows(self.HISTORY_SHEET)
+            updates_count = 0
+            
+            for index, item in enumerate(rows):
+                if item.get("Status") != "SCHEDULED":
+                    continue
+                
+                # --- FACEBOOK CHECK ---
+                if item.get("Page_Id"):
+                    page_id = item.get("Page_Id")
+                    token = item.get("Access_token")
+                    post_id = item.get("Facebook_Post_Id")
+                    post_type = item.get("Type_conten", "Status")
+                    
+                    if page_id and token and post_id:
+                        publisher = FacebookPublisher(page_id, token)
+                        is_live = False
+                        
+                        # 1. Check Video
+                        if post_type == "Video":
+                            res = publisher._make_request(post_id, method="GET", params={"fields": "published"})
+                            if res["success"] and res["data"].get("published") is True:
+                                is_live = True
+                                
+                        # 2. Check Reels
+                        elif post_type == "Reels":
+                            # Reels thường ko có published/is_hidden, check permalink
+                            res = publisher._make_request(post_id, method="GET", params={"fields": "permalink_url"})
+                            if res["success"] and res["data"].get("permalink_url"):
+                                is_live = True
+                                
+                        # 3. Check Scheduled Object (đã tạo ID nhưng chưa tới giờ)
+                        # Trước tiên thử check xem nó có còn là scheduled object không
+                        res_sched = publisher._make_request(post_id, method="GET", params={"fields": "is_published"})
+                        if res_sched["success"]:
+                            if res_sched["data"].get("is_published") is True:
+                                is_live = True
+                        
+                        # 4. Fallback cho Image/Status (Feed Post)
+                        # Nếu check is_published ở trên trả về True rồi thì thôi. 
+                        # Nếu chưa, và là Image/Status, check is_hidden
+                        if not is_live and post_type in ["Image", "Album", "Status"]:
+                             res_hidden = publisher._make_request(post_id, method="GET", params={"fields": "is_hidden"})
+                             if res_hidden["success"]:
+                                 # is_hidden=False nghĩa là đang hiện -> Public
+                                 if res_hidden["data"].get("is_hidden") is False:
+                                     is_live = True
+
+                        if is_live:
+                            print(f"[Scheduler] ✅ FB Post {post_id} đã Pubic. Cập nhật Sheet...")
+                            item["Status"] = "PUBLISHED"
+                            SheetService.update_row(self.HISTORY_SHEET, index, item)
+                            updates_count += 1
+
+                # --- YOUTUBE CHECK ---
+                elif item.get("Channel_Id"):
+                    video_id = item.get("Youtube_Post_Id")
+                    if video_id:
+                        try:
+                            # Tối ưu: Nếu chưa có service, function này sẽ tự gọi get_creds
+                            creds = get_creds()
+                            if creds:
+                                yt_pub = YoutubePublisher(creds)
+                                res = yt_pub.get_video_details(video_id) # Hàm này trả về title, desc, privacy
+                                if res.get("success") and res.get("privacy") == "public":
+                                    print(f"[Scheduler] ✅ YT Video {video_id} đã Public. Cập nhật Sheet...")
+                                    item["Status"] = "PUBLISHED"
+                                    SheetService.update_row(self.HISTORY_SHEET, index, item)
+                                    updates_count += 1
+                        except Exception as ex:
+                            print(f"[Scheduler] Lỗi check YT {video_id}: {ex}")
+
+            if updates_count > 0:
+                print(f"[Scheduler] Hoàn tất. Đã cập nhật {updates_count} bài.")
+            else:
+                print(f"[Scheduler] Không có bài nào chuyển sang Public.")
+                
+        except Exception as e:
+            print(f"[Scheduler] ❌ Lỗi quá trình kiểm tra: {e}")
