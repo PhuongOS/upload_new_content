@@ -27,7 +27,21 @@ let currentConfigSheet = null;
 let currentCalendarData = [];
 let currentFacebookData = [];
 let currentYoutubeData = [];
+let currentYoutubeData = [];
 let activeScheduleTarget = { index: null, platform: null };
+
+// Filter State
+let filterState = {
+    Facebook_db: false,
+    Youtube_db: false
+};
+
+// --- TOGGLE FILTER ---
+function toggleFilter(sheetName) {
+    filterState[sheetName] = !filterState[sheetName];
+    loadSheetData(sheetName);
+}
+
 let facebookConfigs = [];
 let youtubeConfigs = [];
 
