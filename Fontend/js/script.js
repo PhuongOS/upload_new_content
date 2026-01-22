@@ -1303,11 +1303,16 @@ function renderHistory(container, data) {
             const scheduledStatus = item.Status === 'SCHEDULED';
 
             // Generic Management Actions
-            const managementActions = `
+            let managementActions = `
                 <div class="card-mgmt-actions">
                     <button class="btn-icon-tiny" onclick="syncThumbnail(${realIndex})" title="Đồng bộ Thumbnail">
                         <i class="fas fa-sync-alt"></i>
                     </button>
+                    ${scheduledStatus ? `
+                    <button class="btn-icon-tiny success" onclick="publishNow(${realIndex})" title="🚀 Public Ngay (Bỏ qua lịch)">
+                        <i class="fas fa-rocket"></i>
+                    </button>
+                    ` : ''}
                     <button class="btn-icon-tiny" onclick="openEditPostModal(${realIndex})" title="Sửa nội dung">
                         <i class="fas fa-edit"></i>
                     </button>

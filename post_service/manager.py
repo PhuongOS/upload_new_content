@@ -591,10 +591,17 @@ class PostManager:
                     # 2. Update Thumbnail (nếu có)
                     if temp_thumb_path:
                         print(f"[YouTube] Updating thumbnail for {video_id}...")
-                        thumb_res = publisher.set_thumbnail(video_id, temp_thumb_path)
                         if not thumb_res["success"]:
-            except Exception as e:
-                 return {"success": False, "error": str(e)}
+                            print(f"[YouTube] Thumbnail Warning: {thumb_res.get('error')}")
+                            # Không return error ngay nếu metadata success, chỉ cảnh báo?
+                            # Hoặc gộp error
+                    
+                    if res["success"]:
+                        if title: item["Name_video"] = title
+                        SheetService.update_row(self.HISTORY_SHEET, index, item)
+                    return res
+                    
+                return {"success": False, "error": "Unknown Platform"}
 
             finally:
                 if temp_thumb_path and os.path.exists(temp_thumb_path):
