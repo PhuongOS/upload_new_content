@@ -641,7 +641,7 @@ class PostManager:
                         res = publisher._make_request(post_id, method="POST", params={"is_published": "true"})
                         
                     if res["success"]:
-                        item["Status"] = "PUBLISHED"
+                        item["Status"] = "SUCCESS"
                         SheetService.update_row(self.HISTORY_SHEET, index, item)
                     return res
 
@@ -654,7 +654,7 @@ class PostManager:
                      # Update privacy to public (this clears publishAt)
                      res = publisher.update_metadata(video_id, privacy_status="public")
                      if res["success"]:
-                         item["Status"] = "PUBLISHED"
+                         item["Status"] = "SUCCESS"
                          SheetService.update_row(self.HISTORY_SHEET, index, item)
                      return res
 
@@ -875,7 +875,7 @@ class PostManager:
 
                         if is_live:
                             print(f"[Scheduler] ✅ FB Post {post_id} đã Pubic. Cập nhật Sheet...")
-                            item["Status"] = "PUBLISHED"
+                            item["Status"] = "SUCCESS"
                             SheetService.update_row(self.HISTORY_SHEET, index, item)
                             updates_count += 1
 
@@ -891,7 +891,7 @@ class PostManager:
                                 res = yt_pub.get_video_details(video_id) # Hàm này trả về title, desc, privacy
                                 if res.get("success") and res.get("privacy") == "public":
                                     print(f"[Scheduler] ✅ YT Video {video_id} đã Public. Cập nhật Sheet...")
-                                    item["Status"] = "PUBLISHED"
+                                    item["Status"] = "SUCCESS"
                                     SheetService.update_row(self.HISTORY_SHEET, index, item)
                                     updates_count += 1
                         except Exception as ex:

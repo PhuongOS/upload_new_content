@@ -934,6 +934,7 @@ async function publishNow(index) {
             if (data.success) {
                 // Auto Update UI without full reload if possible, or just reload
                 // showConfirmModal({ title: "Thành công", message: "Đã Public thành công!", type: "success" });
+                alert("Đã Public thành công! Trạng thái đã chuyển sang SUCCESS.");
                 loadPublishedHistory();
             } else {
                 alert("Lỗi: " + (data.error || "Không xác định"));
