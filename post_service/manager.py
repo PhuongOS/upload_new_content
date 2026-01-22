@@ -677,12 +677,24 @@ class PostManager:
                 page_id = item.get("Page_Id")
                 token = item.get("Access_token")
                 post_id = item.get("Facebook_Post_Id")
+                
+                # [FIX Logic] Nếu không có ID/Token (ví dụ lỗi khi tạo), cho phép xóa row
+                if not post_id or not token:
+                     SheetService.delete_row(self.HISTORY_SHEET, index)
+                     return {"success": True, "message": "Deleted row (missing FB ID/Token)"}
+
                 if post_id and token:
                     publisher = FacebookPublisher(page_id, token)
                     res = publisher.delete_node(post_id)
 
             elif item.get("Channel_Id"): # YouTube
                 video_id = item.get("Youtube_Post_Id")
+                
+                # [FIX Logic] Nếu không có ID (ví dụ lỗi khi tạo), cho phép xóa row
+                if not video_id:
+                     SheetService.delete_row(self.HISTORY_SHEET, index)
+                     return {"success": True, "message": "Deleted row (missing YT ID)"}
+
                 if video_id:
                     creds = get_creds()
                     publisher = YoutubePublisher(creds)
