@@ -638,6 +638,32 @@ def post_sync_thumbnail(index):
         return jsonify(res)
     return jsonify(res), 400
 
+@api_bp.route('/api/v2/post/publish-now', methods=['POST'])
+def post_publish_now():
+    """
+    Publish ngay lập tức một bài đang Scheduled.
+    ---
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          properties:
+            index:
+              type: integer
+    responses:
+      200:
+        description: Thành công
+    """
+    try:
+        data = request.json
+        index = data.get('index')
+        manager = PostManager()
+        res = manager.publish_now(index)
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @api_bp.route('/api/v2/post/details/<int:index>', methods=['GET'])
 def post_get_details(index):
     """Lấy thông tin chi tiết bài viết từ Platform."""

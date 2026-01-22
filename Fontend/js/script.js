@@ -884,6 +884,48 @@ document.getElementById('saveHookBtn').onclick = async () => {
     }
 };
 
+// Function: Delete Post
+function deletePost(index) {
+    if (confirm("Bạn có chắc muốn xóa bài viết này khỏi Platform? Hành động này không thể hoàn tác.")) {
+        fetch('/api/v2/post/delete', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ index: index })
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    alert("Đã xóa bài viết thành công!");
+                    loadPublishedHistory();
+                } else {
+                    alert("Lỗi: " + (data.error || "Không xác định"));
+                }
+            })
+            .catch(err => alert("Lỗi kết nối: " + err));
+    }
+}
+
+// Function: Publish Now (Skip Schedule)
+function publishNow(index) {
+    if (confirm("Bạn có chắc muốn Public ngay lập tức bài viết này (Bỏ qua lịch hẹn)?")) {
+        fetch('/api/v2/post/publish-now', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ index: index })
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    alert("Đã Public thành công! Trạng thái đã chuyển sang PUBLISHED.");
+                    loadPublishedHistory();
+                } else {
+                    alert("Lỗi: " + (data.error || "Không xác định"));
+                }
+            })
+            .catch(err => alert("Lỗi kết nối: " + err));
+    }
+}
+
 async function generateAiHook() {
     const { sheetName, index } = activeHookTarget;
     const rows = sheetName === 'Facebook_db' ? currentFacebookData : currentYoutubeData;

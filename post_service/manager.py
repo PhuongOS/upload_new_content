@@ -593,22 +593,65 @@ class PostManager:
                         print(f"[YouTube] Updating thumbnail for {video_id}...")
                         thumb_res = publisher.set_thumbnail(video_id, temp_thumb_path)
                         if not thumb_res["success"]:
-                            print(f"[YouTube] Thumbnail Warning: {thumb_res.get('error')}")
-                            # Không return error ngay nếu metadata success, chỉ cảnh báo?
-                            # Hoặc gộp error
-                    
-                    if res["success"]:
-                        if title: item["Name_video"] = title
-                        SheetService.update_row(self.HISTORY_SHEET, index, item)
-                    return res
-                    
-                return {"success": False, "error": "Unknown Platform"}
+            except Exception as e:
+                 return {"success": False, "error": str(e)}
 
             finally:
-                # Dọn dẹp file tạm
                 if temp_thumb_path and os.path.exists(temp_thumb_path):
                     os.remove(temp_thumb_path)
+            
+            return {"success": False, "error": "Platform ID not found in row"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
+    def publish_now(self, index):
+        """
+        [NEW] Chuyển ngay bài viết đang SCHEDULED sang PUBLISHED (Public Now).
+        Bỏ qua thời gian chờ.
+        """
+        try:
+            print(f"[PostManager] Force Publishing row {index}...")
+            rows = SheetService.get_all_rows(self.HISTORY_SHEET)
+            if index >= len(rows): return {"success": False, "error": "Index out of range"}
+            item = rows[index]
+            
+            # --- FACEBOOK ---
+            if item.get("Page_Id"):
+                page_id = item.get("Page_Id")
+                token = item.get("Access_token")
+                post_id = item.get("Facebook_Post_Id")
+                post_type = item.get("Type_conten")
+                
+                if page_id and token and post_id:
+                    publisher = FacebookPublisher(page_id, token)
+                    res = None
+                    
+                    if post_type == "Video":
+                        # FB Video: Update published=true
+                        res = publisher._make_request(post_id, method="POST", data={"published": True})
+                    else:
+                        # FB Post/Image: Update is_published=true
+                        res = publisher._make_request(post_id, method="POST", params={"is_published": "true"})
+                        
+                    if res["success"]:
+                        item["Status"] = "PUBLISHED"
+                        SheetService.update_row(self.HISTORY_SHEET, index, item)
+                    return res
+
+            # --- YOUTUBE ---
+            elif item.get("Channel_Id"):
+                video_id = item.get("Youtube_Post_Id")
+                if video_id:
+                     creds = get_creds()
+                     publisher = YoutubePublisher(creds)
+                     # Update privacy to public (this clears publishAt)
+                     res = publisher.update_metadata(video_id, privacy_status="public")
+                     if res["success"]:
+                         item["Status"] = "PUBLISHED"
+                         SheetService.update_row(self.HISTORY_SHEET, index, item)
+                     return res
+
+            return {"success": False, "error": "Platform or ID not found or not supported"}
         except Exception as e:
             return {"success": False, "error": str(e)}
 
