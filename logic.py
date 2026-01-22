@@ -50,9 +50,20 @@ def get_creds(interactive=False):
                 
             if not os.path.exists(CREDENTIALS_FILE):
                 raise FileNotFoundError(f"Không tìm thấy file credentials tại {CREDENTIALS_FILE}")
-                
+            
             flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
-            creds = flow.run_local_server(port=5001, host='localhost')
+            try:
+                # Thử mở browser local (chỉ hoạt động trên máy cá nhân)
+                creds = flow.run_local_server(port=5001, host='localhost', open_browser=True)
+            except Exception as e:
+                # Fallback hoặc thông báo lỗi rõ ràng trên server
+                err_msg = (
+                    f"Không thể mở trình duyệt để xác thực (Lỗi: {e}). "
+                    "Nếu bạn đang chạy trên Server/Docker, vui lòng upload file 'token.json' "
+                    "đã xác thực từ máy local lên thư mục gốc của server."
+                )
+                print(f"[Auth Error] {err_msg}")
+                raise RuntimeError(err_msg)
         
         # Lưu lại token
         with open(TOKEN_FILE, 'w') as token:
