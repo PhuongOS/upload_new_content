@@ -703,9 +703,15 @@ class PostManager:
             # Xóa trong Sheet bất kể API success hay fail (để dọn rác)
             # Hoặc chỉ xóa nếu success? User yêu cầu xóa bài post thành công
             # Tốt nhất là xóa dòng nếu API OK hoặc API báo không tìm thấy (đã xóa)
-            if res.get("success") or "NOT_FOUND" in str(res.get("error", "")):
-                 SheetService.delete_row(self.HISTORY_SHEET, index)
+            # [FIX] Luôn xóa trong Sheet để tránh bị kẹt
+            # Nếu API lỗi thì trả về success=True nhưng kèm message cảnh báo
+            SheetService.delete_row(self.HISTORY_SHEET, index)
+            
+            if res.get("success"):
                  return {"success": True}
+            
+            # Nếu API fail, vẫn báo success để FE load lại, nhưng kèm warning
+            return {"success": True, "warning": res.get("error", "Platform delete failed")}
             
             return res
         except Exception as e:
