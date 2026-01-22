@@ -129,8 +129,18 @@
                 <section id="facebook-view" class="view">
                     <div class="glass-card">
                         <div class="section-header">
-                            <i class="fab fa-facebook-square"></i>
-                            <h3>Quản lý Facebook Database</h3>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <i class="fab fa-facebook-square"></i>
+                                <h3>Quản lý Facebook Database</h3>
+                            </div>
+                            <div class="header-actions">
+                                <span class="toggle-label">Hiển thị tất cả</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="toggle-facebook-all"
+                                        onchange="toggleFilter('Facebook_db')">
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
                         </div>
                         <div id="facebook-cards-container" class="cards-grid">
                             <div class="loading-spinner">
@@ -145,8 +155,18 @@
                 <section id="youtube-view" class="view">
                     <div class="glass-card">
                         <div class="section-header">
-                            <i class="fab fa-youtube"></i>
-                            <h3>Quản lý Youtube Database</h3>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <i class="fab fa-youtube"></i>
+                                <h3>Quản lý Youtube Database</h3>
+                            </div>
+                            <div class="header-actions">
+                                <span class="toggle-label">Hiển thị tất cả</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="toggle-youtube-all"
+                                        onchange="toggleFilter('Youtube_db')">
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
                         </div>
                         <div id="youtube-cards-container" class="cards-grid">
                             <div class="loading-spinner">

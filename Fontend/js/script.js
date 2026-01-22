@@ -220,14 +220,27 @@ async function loadSheetData(sheetName) {
 }
 
 function renderCards(container, data, sheetName) {
-    // Filter out published posts
+    const showAll = filterState[sheetName];
+
+    // Sync Toggle Switch UI
+    const toggleId = sheetName === 'Facebook_db' ? 'toggle-facebook-all' : 'toggle-youtube-all';
+    const toggleEl = document.getElementById(toggleId);
+    if (toggleEl) toggleEl.checked = showAll;
+
+    // Filter Logic
     const activeData = data.filter(item => {
+        if (showAll) return true; // Show All
+
+        // Default: New Only (Not Posted & No Hook)
         const status = (item.status || '').toUpperCase();
-        return status !== 'PUBLISHED' && status !== 'SUCCESS';
+        const isPosted = status === 'PUBLISHED' || status === 'SUCCESS';
+        const hasHook = item.hook && item.hook.trim().length > 0;
+
+        return !isPosted && !hasHook;
     });
 
     if (!activeData || activeData.length === 0) {
-        container.innerHTML = '<p class="empty-state">Không có bài đăng nào cần xử lý (Hoặc tất cả đã được đăng).</p>';
+        container.innerHTML = `<p class="empty-state">Không có dữ liệu phù hợp (Chế độ: ${showAll ? 'Tất cả' : 'Mới chưa xử lý'}).</p>`;
         return;
     }
 
