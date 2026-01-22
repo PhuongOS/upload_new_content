@@ -27,7 +27,7 @@ let currentConfigSheet = null;
 let currentCalendarData = [];
 let currentFacebookData = [];
 let currentYoutubeData = [];
-let currentYoutubeData = [];
+// Removed duplicate currentYoutubeData
 let activeScheduleTarget = { index: null, platform: null };
 
 // Filter State
