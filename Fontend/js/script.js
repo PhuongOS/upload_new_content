@@ -1548,3 +1548,9 @@ async function deleteHistoryRow(index) {
         alert('Lỗi hệ thống.');
     }
 }
+
+// --- HELPER WRAPPER ---
+function loadPublishedHistory() {
+    console.log("Reloading Published History...");
+    loadSheetData('Published_History');
+}
