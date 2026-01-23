@@ -347,6 +347,7 @@ input[type="text"]:focus {
 }
 
 .btn-primary {
+  margin: 12px 0;
   background: var(--primary);
   color: white;
 }
@@ -358,6 +359,7 @@ input[type="text"]:focus {
 }
 
 .btn-danger {
+  margin: 12px 0;
   background: rgba(239, 68, 68, 0.1);
   color: var(--danger);
   border: 1px solid rgba(239, 68, 68, 0.2);
