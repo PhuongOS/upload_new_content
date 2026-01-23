@@ -205,6 +205,8 @@
 
                         <div class="config-tabs-nav">
                             <button class="config-tab-btn active" data-tab="general-config">Cài đặt chung</button>
+                            <button class="config-tab-btn" data-tab="google-accounts" onclick="loadLinkedAccounts()">Tài
+                                khoản Google</button>
                             <button class="config-tab-btn" data-tab="facebook-config"
                                 onclick="loadConfigData('Facebook_Config')">Facebook Config</button>
                             <button class="config-tab-btn" data-tab="youtube-config"
@@ -237,6 +239,23 @@
                                         placeholder="Định hướng cho AI viết bài Youtube..."></textarea>
                                 </div>
                                 <button class="btn btn-primary" onclick="saveConfig()">Lưu cấu hình hệ thống</button>
+                            </div>
+                        </div>
+
+                        <div class="config-tab-content" id="google-accounts">
+                            <div class="section-header" style="margin-bottom: 20px;">
+                                <div>
+                                    <h4><i class="fab fa-google"></i> Tài khoản Google đã kết nối</h4>
+                                    <p style="color: var(--text-secondary); font-size: 0.9em;">Mỗi tài khoản cho phép
+                                        truy cập các kênh YouTube khác nhau</p>
+                                </div>
+                                <button class="btn btn-primary" onclick="addGoogleAccount()">
+                                    <i class="fas fa-plus"></i> Thêm tài khoản
+                                </button>
+                            </div>
+                            <div id="google-accounts-list" class="config-list">
+                                <!-- Rendered dynamically -->
+                                <p class="empty-state">Đang tải danh sách tài khoản...</p>
                             </div>
                         </div>
 

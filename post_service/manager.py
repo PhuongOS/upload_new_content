@@ -6,6 +6,7 @@ from googleapiclient.discovery import build
 from .facebook_publisher import FacebookPublisher
 from .youtube_publisher import YoutubePublisher
 from services.sheet_service import SheetService
+from services.account_service import AccountService
 from logic import get_creds, tasks
 
 class PostManager:
@@ -347,11 +348,25 @@ class PostManager:
         print(f"[PostManager] YT Publish - Dòng {index}")
         try:
             update_task_msg("Đang chuẩn bị xác thực YouTube...")
-            creds = get_creds()
-            publisher = YoutubePublisher(creds)
             
+            # [MULTI-ACCOUNT] Lấy account_id từ channel config
             channel = item.get('channel', {})
             channel_id = channel.get('id')
+            account_id = channel.get('account_id')  # Từ Youtube_Config cột mới
+            
+            # Chọn credentials dựa trên account_id
+            if account_id:
+                print(f"[PostManager] Using account-specific credentials: {account_id}")
+                try:
+                    creds = AccountService.get_credentials(account_id)
+                except Exception as e:
+                    print(f"[PostManager] ⚠️ Account creds failed, fallback to default: {e}")
+                    creds = get_creds()
+            else:
+                print(f"[PostManager] Using default credentials (no account_id)")
+                creds = get_creds()
+            
+            publisher = YoutubePublisher(creds)
             
             drive_url = item.get('video_url') or item.get('Link_on_drive')
             drive_id = self.extract_drive_id(drive_url)

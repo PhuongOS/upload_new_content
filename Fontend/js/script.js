@@ -158,6 +158,109 @@ function saveConfig() {
     alert('Cấu hình đã được lưu!');
 }
 
+// --- MULTI-ACCOUNT GOOGLE MANAGEMENT ---
+
+async function loadLinkedAccounts() {
+    const container = document.getElementById('google-accounts-list');
+    if (!container) return;
+
+    container.innerHTML = '<p class="empty-state">Đang tải...</p>';
+
+    try {
+        const res = await fetch('/api/auth/accounts');
+        const data = await res.json();
+
+        if (data.success && data.accounts && data.accounts.length > 0) {
+            container.innerHTML = data.accounts.map(acc => `
+                <div class="account-card glass-card" style="display: flex; align-items: center; gap: 15px; padding: 15px; margin-bottom: 10px;">
+                    <img src="${acc.picture || 'https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&f=y'}" 
+                         alt="Avatar" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;">
+                    <div style="flex: 1;">
+                        <strong style="color: var(--text-primary);">${acc.name || 'Tài khoản Google'}</strong>
+                        <p style="color: var(--text-secondary); font-size: 0.85em; margin: 2px 0;">${acc.email}</p>
+                        <p style="color: var(--text-muted); font-size: 0.8em;">
+                            <i class="fab fa-youtube" style="color: var(--danger);"></i> 
+                            ${acc.channels?.length || 0} kênh YouTube
+                        </p>
+                    </div>
+                    <div class="account-actions" style="display: flex; gap: 8px;">
+                        <button class="btn btn-small" onclick="refreshAccountChannels('${acc.id}')" title="Refresh kênh">
+                            <i class="fas fa-sync"></i>
+                        </button>
+                        <button class="btn btn-small btn-danger" onclick="removeGoogleAccount('${acc.id}')" title="Xóa tài khoản">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            container.innerHTML = `
+                <div class="empty-state" style="text-align: center; padding: 30px;">
+                    <i class="fab fa-google" style="font-size: 3em; color: var(--text-muted); margin-bottom: 15px;"></i>
+                    <p>Chưa có tài khoản Google nào được kết nối.</p>
+                    <p style="font-size: 0.9em; color: var(--text-secondary);">Nhấn "Thêm tài khoản" để bắt đầu.</p>
+                </div>
+            `;
+        }
+    } catch (err) {
+        container.innerHTML = `<p class="empty-state" style="color: var(--danger);">Lỗi tải danh sách: ${err.message}</p>`;
+    }
+}
+
+async function addGoogleAccount() {
+    try {
+        alert('Trình duyệt sẽ mở để bạn đăng nhập tài khoản Google. Vui lòng hoàn tất xác thực.');
+
+        const res = await fetch('/api/auth/accounts/add', { method: 'POST' });
+        const data = await res.json();
+
+        if (data.success) {
+            alert(`Đã thêm tài khoản: ${data.email}\nSố kênh YouTube: ${data.channels?.length || 0}`);
+            loadLinkedAccounts();
+        } else {
+            alert(`Lỗi: ${data.error}`);
+        }
+    } catch (err) {
+        alert(`Lỗi kết nối: ${err.message}`);
+    }
+}
+
+async function removeGoogleAccount(accountId) {
+    if (!confirm('Bạn có chắc muốn xóa tài khoản này? Các kênh YouTube liên kết sẽ không thể đăng bài được nữa.')) {
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/auth/accounts/${accountId}`, { method: 'DELETE' });
+        const data = await res.json();
+
+        if (data.success) {
+            alert('Đã xóa tài khoản thành công.');
+            loadLinkedAccounts();
+        } else {
+            alert(`Lỗi: ${data.error}`);
+        }
+    } catch (err) {
+        alert(`Lỗi kết nối: ${err.message}`);
+    }
+}
+
+async function refreshAccountChannels(accountId) {
+    try {
+        const res = await fetch(`/api/auth/accounts/${accountId}/channels`);
+        const data = await res.json();
+
+        if (data.success) {
+            alert(`Đã cập nhật ${data.channels?.length || 0} kênh.`);
+            loadLinkedAccounts();
+        } else {
+            alert(`Lỗi: ${data.error}`);
+        }
+    } catch (err) {
+        alert(`Lỗi: ${err.message}`);
+    }
+}
+
 // File Input Logic
 document.getElementById('selectThumbnail').onclick = () => thumbnailInput.click();
 thumbnailInput.onchange = () => {

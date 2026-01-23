@@ -6,6 +6,7 @@ from flask import Blueprint, request, jsonify, redirect
 from googleapiclient.discovery import build
 from logic import get_creds, tasks, background_upload, delete_drive_file, TOKEN_FILE
 from services.sheet_service import SheetService
+from services.account_service import AccountService
 
 # Khởi tạo Blueprint cho các API
 api_bp = Blueprint('api', __name__)
@@ -37,6 +38,48 @@ def auth_status():
         except Exception as e:
             return jsonify({"connected": False, "error": str(e)})
     return jsonify({"connected": False})
+
+# --- API QUẢN LÝ TÀI KHOẢN YOUTUBE (MULTI-ACCOUNT) ---
+
+@api_bp.route('/api/auth/accounts', methods=['GET'])
+def list_accounts():
+    """Liệt kê tất cả tài khoản Google đã kết nối."""
+    try:
+        accounts = AccountService.list_accounts()
+        return jsonify({"success": True, "accounts": accounts})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@api_bp.route('/api/auth/accounts/add', methods=['POST'])
+def add_account():
+    """Thêm tài khoản Google mới (mở browser để xác thực)."""
+    try:
+        result = AccountService.add_account_interactive()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@api_bp.route('/api/auth/accounts/<account_id>', methods=['DELETE'])
+def remove_account(account_id):
+    """Xóa một tài khoản đã kết nối."""
+    try:
+        result = AccountService.remove_account(account_id)
+        if result["success"]:
+            return jsonify(result)
+        return jsonify(result), 400
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@api_bp.route('/api/auth/accounts/<account_id>/channels', methods=['GET'])
+def get_account_channels(account_id):
+    """Lấy danh sách kênh YouTube của một tài khoản."""
+    try:
+        result = AccountService.refresh_channels(account_id)
+        if result["success"]:
+            return jsonify(result)
+        return jsonify(result), 400
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 # --- API QUẢN LÝ TÁC VỤ (TASK MANAGEMENT) ---
 
