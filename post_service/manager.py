@@ -114,6 +114,31 @@ class PostManager:
             print(f"[PostManager] ❌ Lỗi tải Drive {drive_id}: {str(e)}")
             return False
 
+    def _lookup_account_id_for_channel(self, channel_id, channel_name):
+        """
+        Tra cứu account_id từ Youtube_Config dựa trên channel_id hoặc channel_name.
+        Trả về account_id nếu tìm thấy, None nếu không.
+        """
+        try:
+            configs = SheetService.get_all_rows("Youtube_Config")
+            for config in configs:
+                # Match bằng channel_id hoặc channel_name
+                if channel_id and config.get("channel_id") == channel_id:
+                    account_id = config.get("account_id")
+                    if account_id:
+                        print(f"[PostManager] Found account_id by channel_id: {account_id}")
+                        return account_id
+                if channel_name and config.get("channel_name") == channel_name:
+                    account_id = config.get("account_id")
+                    if account_id:
+                        print(f"[PostManager] Found account_id by channel_name: {account_id}")
+                        return account_id
+            print(f"[PostManager] ⚠️ No account_id found for channel: {channel_name} ({channel_id})")
+            return None
+        except Exception as e:
+            print(f"[PostManager] Error looking up account_id: {e}")
+            return None
+
     def publish_item(self, sheet_name, index, task_id=None):
         """
         Thực hiện đăng bài cho một dòng cụ thể trong Sheet.
@@ -349,10 +374,15 @@ class PostManager:
         try:
             update_task_msg("Đang chuẩn bị xác thực YouTube...")
             
-            # [MULTI-ACCOUNT] Lấy account_id từ channel config
+            # [MULTI-ACCOUNT] Lấy channel info
             channel = item.get('channel', {})
             channel_id = channel.get('id')
-            account_id = channel.get('account_id')  # Từ Youtube_Config cột mới
+            channel_name = channel.get('name')
+            
+            # Lookup account_id từ Youtube_Config dựa trên channel_id hoặc channel_name
+            account_id = self._lookup_account_id_for_channel(channel_id, channel_name)
+            
+            print(f"[PostManager] Channel: {channel_name} (ID: {channel_id}), Account ID: {account_id}")
             
             # Chọn credentials dựa trên account_id
             if account_id:
@@ -363,7 +393,7 @@ class PostManager:
                     print(f"[PostManager] ⚠️ Account creds failed, fallback to default: {e}")
                     creds = get_creds()
             else:
-                print(f"[PostManager] Using default credentials (no account_id)")
+                print(f"[PostManager] ⚠️ No account_id found, using default credentials")
                 creds = get_creds()
             
             publisher = YoutubePublisher(creds)
