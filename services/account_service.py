@@ -135,11 +135,20 @@ class AccountService:
         }
         AccountService._save_accounts(accounts)
 
+        # [NEW] Sync channels to Youtube_Config sheet
+        sync_result = AccountService._sync_channels_to_sheet(
+            channels, 
+            user_info.get("email", ""), 
+            account_id
+        )
+        print(f"[AccountService] Synced {sync_result.get('added', 0)} channels to Youtube_Config")
+
         return {
             "success": True,
             "account_id": account_id,
             "email": user_info.get("email"),
-            "channels": channels
+            "channels": channels,
+            "synced_to_sheet": sync_result.get('added', 0)
         }
 
     @staticmethod
@@ -242,3 +251,70 @@ class AccountService:
             return {"success": True, "channels": channels}
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    @staticmethod
+    def _sync_channels_to_sheet(channels, email, account_id):
+        """
+        Đồng bộ danh sách kênh YouTube vào Google Sheet Youtube_Config.
+        - Thêm các kênh chưa tồn tại (dựa trên channel_id)
+        - Cập nhật account_id cho các kênh đã tồn tại nhưng chưa có account_id
+        """
+        from services.sheet_service import SheetService
+        
+        added_count = 0
+        updated_count = 0
+        try:
+            # Lấy danh sách kênh đã có trong Sheet
+            existing_configs = SheetService.get_all_rows("Youtube_Config")
+            
+            # Tạo map channel_id -> (index, config)
+            existing_map = {}
+            for idx, config in enumerate(existing_configs):
+                cid = config.get("channel_id")
+                if cid:
+                    existing_map[cid] = (idx, config)
+            
+            # Xử lý từng kênh
+            for channel in channels:
+                channel_id = channel.get("id")
+                if not channel_id:
+                    continue
+                    
+                if channel_id in existing_map:
+                    # Kênh đã tồn tại - kiểm tra xem cần cập nhật account_id không
+                    row_idx, existing_config = existing_map[channel_id]
+                    existing_account_id = existing_config.get("account_id", "").strip()
+                    
+                    if not existing_account_id:
+                        # Cập nhật account_id cho kênh đã tồn tại
+                        updated_config = {
+                            "channel_name": existing_config.get("channel_name", channel.get("title", "")),
+                            "channel_id": channel_id,
+                            "gmail_channel": email or existing_config.get("gmail_channel", ""),
+                            "account_id": account_id
+                        }
+                        try:
+                            SheetService.update_row("Youtube_Config", row_idx, updated_config)
+                            updated_count += 1
+                            print(f"[AccountService] Updated account_id for channel: {channel.get('title')}")
+                        except Exception as e:
+                            print(f"[AccountService] Error updating channel {channel.get('title')}: {e}")
+                else:
+                    # Kênh mới - thêm vào Sheet
+                    new_row = {
+                        "channel_name": channel.get("title", ""),
+                        "channel_id": channel_id,
+                        "gmail_channel": email,
+                        "account_id": account_id
+                    }
+                    try:
+                        SheetService.append_row("Youtube_Config", new_row)
+                        added_count += 1
+                        print(f"[AccountService] Added channel to Sheet: {channel.get('title')}")
+                    except Exception as e:
+                        print(f"[AccountService] Error adding channel {channel.get('title')}: {e}")
+            
+            return {"success": True, "added": added_count, "updated": updated_count}
+        except Exception as e:
+            print(f"[AccountService] Error syncing channels to sheet: {e}")
+            return {"success": False, "added": 0, "updated": 0, "error": str(e)}
