@@ -6,3 +6,7 @@ __pycache__/
 .vscode/
 assect/AouthGoogle.json
 deploy.tar
+
+# Tokens - DO NOT commit
+tokens/
+token.json

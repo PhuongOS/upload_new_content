@@ -14,11 +14,14 @@ TOKENS_DIR = 'tokens'
 ACCOUNTS_FILE = os.path.join(TOKENS_DIR, 'accounts.json')
 CREDENTIALS_FILE = 'assect/AouthGoogle.json'
 
-# Scopes cần thiết cho YouTube
+# Scopes cần thiết cho YouTube và User Info
 YOUTUBE_SCOPES = [
+    "openid",  # Required when using userinfo scopes
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.force-ssl",
-    "https://www.googleapis.com/auth/youtube.readonly"
+    "https://www.googleapis.com/auth/youtube.readonly",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile"
 ]
 
 # Đảm bảo thư mục tokens tồn tại
@@ -78,7 +81,7 @@ class AccountService:
         flow = InstalledAppFlow.from_client_secrets_file(
             CREDENTIALS_FILE, 
             YOUTUBE_SCOPES,
-            redirect_uri='http://localhost:5001/'  # Hoặc URL callback của bạn
+            redirect_uri='http://localhost:8080/'  # Hoặc URL callback của bạn
         )
         
         # Lưu state để verify callback
@@ -106,7 +109,7 @@ class AccountService:
         flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, YOUTUBE_SCOPES)
         
         try:
-            creds = flow.run_local_server(port=5001, host='localhost', open_browser=True)
+            creds = flow.run_local_server(port=8080, host='localhost', open_browser=True)
         except Exception as e:
             raise RuntimeError(f"Không thể mở trình duyệt để xác thực: {e}")
 

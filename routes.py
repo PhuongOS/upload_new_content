@@ -52,10 +52,28 @@ def list_accounts():
 
 @api_bp.route('/api/auth/accounts/add', methods=['POST'])
 def add_account():
-    """Thêm tài khoản Google mới (mở browser để xác thực)."""
+    """
+    Thêm tài khoản Google mới.
+    Nếu đang truy cập từ localhost, mở browser trực tiếp.
+    Nếu từ remote, trả về URL để user tự mở.
+    """
     try:
-        result = AccountService.add_account_interactive()
-        return jsonify(result)
+        # Kiểm tra xem có phải truy cập từ localhost không
+        is_local = request.remote_addr in ['127.0.0.1', 'localhost', '::1']
+        
+        if is_local:
+            # Mở browser trực tiếp trên máy server
+            result = AccountService.add_account_interactive()
+            return jsonify(result)
+        else:
+            # Remote access: Trả về URL để user tự mở
+            auth_info = AccountService.add_account_start()
+            return jsonify({
+                "success": False, 
+                "needs_manual_auth": True,
+                "auth_url": auth_info["auth_url"],
+                "message": "Vui lòng mở URL này trong trình duyệt để xác thực."
+            })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 

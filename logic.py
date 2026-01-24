@@ -54,7 +54,7 @@ def get_creds(interactive=False):
             flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
             try:
                 # Thử mở browser local (chỉ hoạt động trên máy cá nhân)
-                creds = flow.run_local_server(port=5001, host='localhost', open_browser=True)
+                creds = flow.run_local_server(port=8080, host='localhost', open_browser=True)
             except Exception as e:
                 # Fallback hoặc thông báo lỗi rõ ràng trên server
                 err_msg = (

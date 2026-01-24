@@ -209,16 +209,18 @@ async function loadLinkedAccounts() {
 
 async function addGoogleAccount() {
     try {
-        alert('Trình duyệt sẽ mở để bạn đăng nhập tài khoản Google. Vui lòng hoàn tất xác thực.');
-
         const res = await fetch('/api/auth/accounts/add', { method: 'POST' });
         const data = await res.json();
 
         if (data.success) {
             alert(`Đã thêm tài khoản: ${data.email}\nSố kênh YouTube: ${data.channels?.length || 0}`);
             loadLinkedAccounts();
+        } else if (data.needs_manual_auth && data.auth_url) {
+            // Remote access: Mở URL trong tab mới
+            alert('Một tab mới sẽ mở để bạn đăng nhập Google.\n\nSau khi xác thực xong, hãy quay lại và nhấn "Thêm tài khoản" lần nữa.');
+            window.open(data.auth_url, '_blank');
         } else {
-            alert(`Lỗi: ${data.error}`);
+            alert(`Lỗi: ${data.error || data.message || 'Không xác định'}`);
         }
     } catch (err) {
         alert(`Lỗi kết nối: ${err.message}`);
