@@ -1798,6 +1798,7 @@ function renderWooDb(data) {
         let statusClass = 'status-new';
         if (item.status === 'SUCCESS') statusClass = 'status-success';
         if (item.status === 'ERROR') statusClass = 'status-danger';
+        if (item.status === 'PENDING_REVIEW') statusClass = 'status-warning';
 
         const postStatus = item.post_status || 'publish';
         const postStatusLabel = postStatus === 'draft' ? '<br><small style="color:#fbbf24">(Bản nháp)</small>' : '';
@@ -1833,10 +1834,37 @@ function editWooItem(index) {
     if (!item) return;
 
     document.getElementById('editWooIndex').value = index;
-    document.getElementById('editWooTitle').value = item.title;
+    document.getElementById('editWooTitle').value = item.title || "";
+    document.getElementById('editWooPrice').value = item.regular_price || "";
+    document.getElementById('editWooSalePrice').value = item.sale_price || "";
+    document.getElementById('editWooCategories').value = item.categories || "";
     document.getElementById('editWooPostStatus').value = item.post_status || 'publish';
+    document.getElementById('editWooDesc').value = item.description || "";
+    document.getElementById('editWooShortDesc').value = item.short_description || "";
+
+    // Reset tabs
+    switchWooEditTab('editor');
 
     document.getElementById('editWooModal').classList.add('visible');
+}
+
+function switchWooEditTab(tab) {
+    const editor = document.getElementById('wooEditorView');
+    const preview = document.getElementById('wooPreviewView');
+    const tabs = document.querySelectorAll('.woo-edit-tabs .btn-tab');
+
+    if (tab === 'editor') {
+        editor.style.display = 'block';
+        preview.style.display = 'none';
+        tabs[0].classList.add('active');
+        tabs[1].classList.remove('active');
+    } else {
+        editor.style.display = 'none';
+        preview.style.display = 'block';
+        tabs[0].classList.remove('active');
+        tabs[1].classList.add('active');
+        preview.innerHTML = document.getElementById('editWooDesc').value;
+    }
 }
 
 function closeEditWooModal() {
@@ -1851,7 +1879,17 @@ async function saveWooItemEdit() {
     if (!newTitle) return showErrorModal("Lỗi", "Tiêu đề không được để trống.");
 
     try {
-        const item = { ...currentWooData[index], title: newTitle, post_status: newPostStatus };
+        const item = {
+            ...currentWooData[index],
+            title: newTitle,
+            regular_price: document.getElementById('editWooPrice').value.trim(),
+            sale_price: document.getElementById('editWooSalePrice').value.trim(),
+            categories: document.getElementById('editWooCategories').value.trim(),
+            post_status: newPostStatus,
+            description: document.getElementById('editWooDesc').value,
+            short_description: document.getElementById('editWooShortDesc').value,
+            status: "NEW" // Chuyển về NEW sau khi đã kiểm duyệt xong
+        };
         const res = await fetch('/api/v2/woocommerce/update-item', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -2146,6 +2184,70 @@ async function handleWooCsv(event) {
     }
     // Reset input
     event.target.value = '';
+}
+
+async function handleBulkAnalyzeCsv(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const apiKey = localStorage.getItem('geminiApiKey');
+    if (!apiKey) return showErrorModal("Thiếu thông tin", "Vui lòng cấu hình Gemini API Key.");
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('api_key', apiKey.trim());
+    formData.append('system_prompt', localStorage.getItem('wooGeminiSystemPrompt') || '');
+
+    try {
+        showSuccessModal("Đã bắt đầu", "Hệ thống đang bắt đầu phân tích hàng loạt. Các bài viết sẽ xuất hiện dần trong danh sách.");
+        const res = await fetch('/api/v2/woocommerce/bulk-analyze', {
+            method: 'POST',
+            body: formData
+        });
+        const result = await res.json();
+        if (result.success) {
+            startBulkPolling(result.task_id);
+        } else {
+            showErrorModal("Lỗi", result.error);
+        }
+    } catch (err) {
+        showErrorModal("Lỗi kết nối", err.message);
+    }
+    event.target.value = '';
+}
+
+function startBulkPolling(taskId) {
+    const statusDiv = document.getElementById('bulkAnalyzeStatus');
+    const progressBar = document.getElementById('bulkAnalyzeProgress');
+    statusDiv.style.display = 'block';
+
+    const interval = setInterval(async () => {
+        try {
+            const res = await fetch('/api/tasks');
+            const tasks = await res.json();
+            const task = tasks[taskId];
+
+            if (!task) return;
+
+            // Refresh table real-time to show new items
+            loadWooDb();
+
+            if (task.status === 'processing') {
+                // Ta không có tổng số ở đây từ backend dễ dàng, nhưng có thể update message
+                if (task.message) {
+                    addProgressItem(`🤖 [Bulk] ${task.message}`);
+                }
+            } else if (task.status === 'success') {
+                clearInterval(interval);
+                statusDiv.style.display = 'none';
+                showSuccessModal("Hoàn tất", "Phân tích hàng loạt đã xong!");
+            } else if (task.status === 'error') {
+                clearInterval(interval);
+                statusDiv.style.display = 'none';
+                showErrorModal("Lỗi phân tích hàng loạt", task.message);
+            }
+        } catch (e) { console.error(e); }
+    }, 5000);
 }
 
 // --- HELPER WRAPPER ---

@@ -9,6 +9,9 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from werkzeug.utils import secure_filename
 import time
+import requests
+import io
+import csv
 
 # --- CÁC HẰNG SỐ CẤU HÌNH ---
 TOKEN_FILE = 'token.json'  # File lưu trữ token đăng nhập sau khi xác thực thành công
@@ -412,3 +415,63 @@ def delete_drive_file(file_id):
     except Exception as e:
         print(f"Drive Error: Lỗi khi xóa file {file_id}: {e}")
         return False
+
+def background_bulk_analyze(task_id, urls, api_key, system_prompt=None):
+    """
+    Xử lý hàng loạt các URL: Cào dữ liệu -> AI viết bài -> Thêm vào Woocommerce_db.
+    """
+    tasks[task_id] = {"status": "processing", "progress": "Bắt đầu phân tích hàng loạt...", "message": f"Danh sách có {len(urls)} URLs"}
+    
+    from services.url_analyzer import URLAnalyzer
+    from services.sheet_service import SheetService
+    from models.Woocommerce_db import WoocommerceDbModel
+    
+    analyzer = URLAnalyzer(api_key, system_prompt)
+    success_count = 0
+    fail_count = 0
+    
+    for i, url in enumerate(urls):
+        url = url.strip()
+        if not url: continue
+        
+        tasks[task_id]["progress"] = f"Đang xử lý ({i+1}/{len(urls)}): {url[:30]}..."
+        print(f"[Bulk-Analyze] Processing {i+1}/{len(urls)}: {url}")
+        
+        try:
+            # 1. Scrape & AI Generate
+            raw_data = analyzer.scrape_product_info(url)
+            if "error" in raw_data:
+                raise Exception(raw_data["error"])
+                
+            res = analyzer.generate_seo_product(raw_data)
+            if "error" in res:
+                raise Exception(res["error"])
+            
+            # 2. Chuẩn bị data để lưu vào Sheet
+            product = {
+                "title": res.get("title", "No Title"),
+                "regular_price": res.get("regular_price", ""),
+                "sale_price": res.get("sale_price", ""),
+                "description": res.get("description", ""),
+                "short_description": res.get("short_description", ""),
+                "categories": res.get("categories", ""),
+                "images": res.get("images", ""),
+                "source_url": url,
+                "status": "PENDING_REVIEW", # Trạng thái mới để người dùng dễ nhận biết
+                "post_status": "publish"
+            }
+            
+            # 3. Lưu ngay lập tức vào Sheet
+            SheetService.append_row(WoocommerceDbModel.SHEET_NAME, product)
+            success_count += 1
+            tasks[task_id]["message"] = f"✅ Đã thêm: {product['title'][:40]}..."
+            
+        except Exception as e:
+            print(f"[Bulk-Analyze] Error on {url}: {e}")
+            fail_count += 1
+            tasks[task_id]["message"] = f"❌ Lỗi link thứ {i+1}: {str(e)[:50]}"
+            
+    tasks[task_id]["status"] = "success"
+    tasks[task_id]["progress"] = "Hoàn tất phân tích hàng loạt!"
+    tasks[task_id]["message"] = f"Thành công: {success_count}, Thất bại: {fail_count}"
+    tasks[task_id]["result"] = {"success": success_count, "fail": fail_count}

@@ -412,14 +412,38 @@
 
                             <!-- Bulk CSV Upload -->
                             <div class="sub-card">
-                                <h4><i class="fas fa-file-csv"></i> Bulk Upload</h4>
-                                <p class="sub-text">Đăng hàng loạt sản phẩm từ file CSV.</p>
+                                <h4><i class="fas fa-file-csv"></i> Bulk Upload CSV</h4>
+                                <p class="sub-text">Đăng hàng loạt sản phẩm từ file CSV (đã có đủ thông tin).</p>
                                 <div class="file-drop-area mini"
                                     onclick="document.getElementById('wooCsvFile').click()">
                                     <i class="fas fa-upload"></i>
                                     <span>Chọn file CSV</span>
                                     <input type="file" id="wooCsvFile" accept=".csv" hidden
                                         onchange="handleWooCsv(event)" />
+                                </div>
+                            </div>
+
+                            <!-- Bulk Link Analysis -->
+                            <div class="sub-card"
+                                style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 15px;">
+                                <h4><i class="fas fa-magic"></i> Bulk Link Analysis</h4>
+                                <p class="sub-text">AI phân tích hàng loạt link từ file CSV (chỉ cần link).</p>
+                                <div class="file-drop-area mini"
+                                    style="border-color: var(--accent); background: rgba(59, 130, 246, 0.05);"
+                                    onclick="document.getElementById('wooBulkLinkFile').click()">
+                                    <i class="fas fa-robot"></i>
+                                    <span>Chọn file CSV link</span>
+                                    <input type="file" id="wooBulkLinkFile" accept=".csv" hidden
+                                        onchange="handleBulkAnalyzeCsv(event)" />
+                                </div>
+                                <div id="bulkAnalyzeStatus" style="font-size: 11px; margin-top: 10px; display: none;">
+                                    <span class="badge badge-info"><i class="fas fa-sync fa-spin"></i> Đang xử
+                                        lý...</span>
+                                    <div class="progress"
+                                        style="height: 4px; margin-top: 5px; background: rgba(255,255,255,0.1);">
+                                        <div id="bulkAnalyzeProgress" class="progress-bar"
+                                            style="width: 0%; height:100%; background: var(--accent);"></div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -635,12 +659,52 @@
                     <label>Tiêu đề sản phẩm</label>
                     <input type="text" id="editWooTitle" placeholder="Nhập tiêu đề...">
                 </div>
+
+                <div class="row">
+                    <div class="col">
+                        <div class="input-group">
+                            <label>Giá niêm yết</label>
+                            <input type="text" id="editWooPrice" placeholder="Ví dụ: 250000">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="input-group">
+                            <label>Giá khuyến mãi</label>
+                            <input type="text" id="editWooSalePrice" placeholder="Trống nếu không có">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label>Danh mục (ID hoặc tên, cách nhau dấu phẩy)</label>
+                    <input type="text" id="editWooCategories" placeholder="Ví dụ: 12, 45">
+                </div>
+
                 <div class="input-group">
                     <label>Trạng thái khi đăng</label>
                     <select id="editWooPostStatus" class="card-select">
                         <option value="publish">Public (Công khai ngay)</option>
                         <option value="draft">Draft (Bản nháp)</option>
                     </select>
+                </div>
+
+                <!-- Editor vs Preview -->
+                <div class="woo-edit-tabs" style="display: flex; gap: 10px; margin-bottom: 5px;">
+                    <button class="btn-tab active" onclick="switchWooEditTab('editor')">Trình chỉnh sửa (HTML)</button>
+                    <button class="btn-tab" onclick="switchWooEditTab('preview')">Xem trước (Preview)</button>
+                </div>
+
+                <div id="wooEditorView" class="input-group">
+                    <label>Mô tả chi tiết (HTML)</label>
+                    <textarea id="editWooDesc" rows="12" style="font-family: monospace; font-size: 13px;"></textarea>
+                </div>
+                <div id="wooPreviewView" class="preview-box"
+                    style="display: none; height: 300px; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                </div>
+
+                <div class="input-group" style="margin-top: 15px;">
+                    <label>Mô tả ngắn</label>
+                    <textarea id="editWooShortDesc" rows="3"></textarea>
                 </div>
             </div>
             <div class="modal-footer">

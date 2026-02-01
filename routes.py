@@ -940,6 +940,44 @@ def woocommerce_import_csv():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@api_bp.route('/api/v2/woocommerce/bulk-analyze', methods=['POST'])
+def woocommerce_bulk_analyze():
+    """Nhận file CSV chứa list link sản phẩm và bắt đầu phân tích hàng loạt."""
+    if 'file' not in request.files:
+        return jsonify({"error": "Không tìm thấy file"}), 400
+    
+    file = request.files['file']
+    api_key = request.form.get('api_key')
+    system_prompt = request.form.get('system_prompt')
+    
+    if not api_key:
+        return jsonify({"error": "Thiếu Gemini API Key"}), 400
+
+    try:
+        stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
+        reader = csv.reader(stream)
+        urls = []
+        for row in reader:
+            if row:
+                # Giả định URL nằm ở cột đầu tiên nếu không có header, hoặc tìm link
+                for cell in row:
+                    if cell.startswith('http'):
+                        urls.append(cell.strip())
+                        break
+        
+        if not urls:
+            return jsonify({"error": "Không tìm thấy URL nào trong file"}), 400
+            
+        task_id = str(uuid.uuid4())
+        from logic import background_bulk_analyze
+        import threading
+        thread = threading.Thread(target=background_bulk_analyze, args=(task_id, urls, api_key, system_prompt))
+        thread.start()
+        
+        return jsonify({"success": True, "task_id": task_id, "count": len(urls)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @api_bp.route('/api/v2/woocommerce/add-item', methods=['POST'])
 def woocommerce_add_item():
     """
