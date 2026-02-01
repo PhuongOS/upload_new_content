@@ -1706,3 +1706,9 @@ input:checked+.slider:before {
   color: var(--text);
   outline: none;
 }
+.action-buttons {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+}

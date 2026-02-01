@@ -34,9 +34,10 @@ class GeminiProvider:
         self.model = genai.GenerativeModel('gemini-flash-latest')
         logging.info(f"[Gemini] Configured with key index {self.current_key_index} (starts with {key[:6]}...)")
 
-    def generate_content(self, user_prompt):
+    def generate_content(self, user_prompt, is_json=False):
         """
-        Gửi yêu cầu đến Gemini để tạo nội dung, có hỗ trợ xoay vòng API Key nếu lỗi 429
+        Gửi yêu cầu đến Gemini để tạo nội dung, có hỗ trợ xoay vòng API Key nếu lỗi 429.
+        is_json: Nếu True, sẽ yêu cầu định dạng đầu ra là application/json (Nếu thư viện hỗ trợ)
         """
         if not self.api_keys:
             logging.error("No API Keys available for Gemini Provider.")
@@ -50,11 +51,27 @@ class GeminiProvider:
             full_prompt = f"System: {self.system_prompt}\n\nUser: {user_prompt}"
             
             try:
-                response = self.model.generate_content(full_prompt)
-                if response and response.text:
-                    logging.info("Gemini content generated successfully.")
-                    return response.text.strip()
-                logging.warning("Gemini returned an empty response or no text.")
+                generation_config = {}
+                if is_json:
+                    generation_config["response_mime_type"] = "application/json"
+                
+                response = self.model.generate_content(full_prompt, generation_config=generation_config)
+                
+                if response and response.candidates:
+                    # Kiểm tra xem có text thật không
+                    try:
+                        text = response.text.strip()
+                        if text:
+                            logging.info("Gemini content generated successfully.")
+                            return text
+                    except Exception as text_e:
+                        logging.warning(f"[Gemini] Could not access response.text: {text_e}")
+                        # Có thể do bị Safety Filter chặn
+                        if hasattr(response, 'candidates') and response.candidates:
+                            candidate = response.candidates[0]
+                            logging.warning(f"[Gemini] Candidate Finish Reason: {candidate.finish_reason}")
+                
+                logging.warning("Gemini returned an empty response or was filtered.")
                 return ""
             except Exception as e:
                 error_msg = str(e)

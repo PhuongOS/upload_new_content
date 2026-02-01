@@ -989,7 +989,9 @@ class PostManager:
             publisher = WoocommercePublisher(
                 conf['site_url'], 
                 conf['consumer_key'], 
-                conf['consumer_secret']
+                conf['consumer_secret'],
+                wp_user=conf.get('wp_user'),
+                wp_app_pass=conf.get('wp_app_pass')
             )
 
             # 2. Xử lý dữ liệu sản phẩm
@@ -1000,7 +1002,7 @@ class PostManager:
                 "sale_price": str(item.get('sale_price', '')).replace(',', '').strip(),
                 "description": item.get('description', ''),
                 "short_description": item.get('short_description', ''),
-                "status": "publish" # Mặc định đăng public ngay
+                "status": item.get('post_status', 'publish') # Hỗ trợ draft/publish
             }
             
             # Xóa sale_price nếu trống hoặc không hợp lệ để tránh lỗi API
@@ -1023,22 +1025,77 @@ class PostManager:
                 
                 # Safety fix: Đảm bảo link Drive có đuôi file cho WordPress nhận diện
                 sanitized_urls = []
+                from logic import convert_drive_link_to_direct
                 for u in urls:
-                    if 'drive.google.com' in u:
-                        import re as regex
-                        # Trích xuất file_id từ link Drive
-                        fid_match = regex.search(r'id=([a-zA-Z0-9_-]+)', u) or regex.search(r'/d/([a-zA-Z0-9_-]+)', u)
-                        if fid_match:
-                            file_id = fid_match.group(1)
-                            # Chuyển sang format lh3 siêu sạch cho WordPress (s0 = full size)
-                            u = f"https://lh3.googleusercontent.com/d/{file_id}=s0?ext=.jpg"
+                    if 'drive.google.com' in u or 'lh3.googleusercontent.com' in u:
+                        u = convert_drive_link_to_direct(u)
                     sanitized_urls.append(u)
 
                 if sanitized_urls:
-                    product_data["images"] = [{"src": u} for u in sanitized_urls]
-                    print(f"[WC-Publish] Image URLs detected: {len(sanitized_urls)} images")
-                    for idx, img_obj in enumerate(product_data["images"]):
-                        print(f"[WC-Publish] Image #{idx+1}: {img_obj['src']}")
+                    final_image_objs = []
+                    print(f"[SENTINEL-FIX-v5] Image URLs detected: {len(sanitized_urls)} images. Bắt đầu upload media trực tiếp triệt để...")
+                    
+                    mime_to_ext = {
+                        'image/jpeg': '.jpg',
+                        'image/jpg': '.jpg',
+                        'image/png': '.png',
+                        'image/webp': '.webp',
+                        'image/gif': '.gif'
+                    }
+                    
+                    url_mapping = {}
+                    for idx, img_url in enumerate(sanitized_urls):
+                        try:
+                            import requests
+                            # 1. Chẩn đoán nội dung
+                            head_res = requests.head(img_url, timeout=5, allow_redirects=True)
+                            ctype = head_res.headers.get('Content-Type', 'unknown').lower()
+                            
+                            # Xác định extension
+                            ext = ".jpg"
+                            for m, e in mime_to_ext.items():
+                                if m in ctype:
+                                    ext = e
+                                    break
+                            
+                            # 2. Upload binary lên WP (tránh sideload lỗi)
+                            filename = f"product_{idx+1}_{int(time.time())}{ext}"
+                            print(f"[WC-Publish] Image #{idx+1} [Binary Uploading...]")
+                            upload_res = publisher.upload_media_binary(img_url, filename)
+                            
+                            if upload_res.get("success"):
+                                media_id = upload_res.get("media_id")
+                                new_wp_url = upload_res.get("url")
+                                final_image_objs.append({"id": media_id})
+                                url_mapping[img_url] = new_wp_url
+                                print(f"[WC-Publish] Image #{idx+1}: Upload thành công, ID={media_id}, URL={new_wp_url}")
+                            else:
+                                print(f"[WC-Publish] Image #{idx+1}: Upload thất bại qua Media API: {upload_res.get('error')}")
+                                # QUAN TRỌNG: Nếu sideload URL gốc thường bị chặn, ta KHÔNG nên gửi kềm vào product_data
+                                # vì WordPress sẽ từ chối cả sản phẩm nếu có 1 ảnh 'không hợp lệ'.
+                                # Chỉ giữ lại nếu là ảnh đầu tiên (Featured Image) để thử vận may, hoặc bỏ qua hẳn nếu muốn an toàn.
+                                if idx == 0:
+                                    print(f"[WC-Publish] Image #1: Giữ lại URL gốc làm ảnh đại diện (Featured Image)")
+                                    final_image_objs.append({"src": img_url})
+                                else:
+                                    print(f"[WC-Publish] Image #{idx+1}: Bỏ qua ảnh này để tránh làm hỏng cả bài đăng.")
+                                
+                        except Exception as e:
+                            print(f"[WC-Publish] Error processing image #{idx+1}: {e}")
+
+                    product_data["images"] = final_image_objs
+                    
+                    # 3. Thay thế link gốc bằng link WordPress trong nội dung mô tả
+                    desc = product_data.get('description', '')
+                    short_desc = product_data.get('short_description', '')
+                    for old_url, new_url in url_mapping.items():
+                        if new_url:
+                            desc = desc.replace(old_url, new_url)
+                            short_desc = short_desc.replace(old_url, new_url)
+                    
+                    product_data['description'] = desc
+                    product_data['short_description'] = short_desc
+                    print(f"[WC-Publish] Đã cập nhật {len(url_mapping)} link ảnh trong nội dung mô tả.")
                 else:
                     print(f"[WC-Publish] No valid http URLs found in images field: {img_urls}")
             else:

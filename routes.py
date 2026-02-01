@@ -464,7 +464,8 @@ def upload_files():
             'parentId': request.form.get('parentId'),
             'sheetId': request.form.get('sheetId'),
             'folderName': request.form.get('folderName'),
-            'topic': request.form.get('topic')
+            'topic': request.form.get('topic'),
+            'uploadToWp': request.form.get('uploadToWp') == 'true'
         }
         files_data = {'files': []}
         if 'thumbnail' in request.files:
@@ -850,7 +851,9 @@ def woocommerce_categories():
         publisher = WoocommercePublisher(
             config.get('site_url'), 
             config.get('consumer_key'), 
-            config.get('consumer_secret')
+            config.get('consumer_secret'),
+            wp_user=config.get('wp_user'),
+            wp_app_pass=config.get('wp_app_pass')
         )
         res = publisher.get_categories()
         return jsonify(res)
@@ -911,19 +914,27 @@ def woocommerce_import_csv():
         
         count = 0
         for row in reader:
-            # Ánh xạ từ CSV sang Model (Giả sử các header CSV khớp hoặc map gần đúng)
+            # Thu thập data với fallback cho nhiều loại header phổ biến
+            def get_val(keys, default=''):
+                for k in keys:
+                    v = row.get(k)
+                    if v is not None: return str(v).strip()
+                return default
+
             product = {
-                "title": row.get('title', row.get('Product Name', '')),
-                "regular_price": row.get('regular_price', row.get('Price', '')),
-                "sale_price": row.get('sale_price', ''),
-                "description": row.get('description', ''),
-                "short_description": row.get('short_description', ''),
-                "categories": row.get('categories', ''),
-                "images": row.get('images', ''),
+                "title": get_val(['title', 'Title', 'Product Name', 'Name', 'product_name']),
+                "regular_price": get_val(['regular_price', 'Regular price', 'Price', 'price', 'Gia']),
+                "sale_price": get_val(['sale_price', 'Sale price', 'Gia sales', 'Gia khuyen mai']),
+                "description": get_val(['description', 'Description', 'Mo ta', 'Content']),
+                "short_description": get_val(['short_description', 'Short description', 'Mo ta ngan', 'Excerpt']),
+                "categories": get_val(['categories', 'Categories', 'Danh muc', 'Category']),
+                "images": get_val(['images', 'Images', 'Anh', 'Image URLs']),
+                "post_status": get_val(['post_status', 'Status', 'Trang thai'], 'publish'),
                 "status": "NEW"
             }
-            SheetService.append_row(WoocommerceDbModel.SHEET_NAME, product)
-            count += 1
+            if product["title"]:
+                SheetService.append_row(WoocommerceDbModel.SHEET_NAME, product)
+                count += 1
             
         return jsonify({"success": True, "imported": count})
     except Exception as e:
@@ -968,9 +979,42 @@ def woocommerce_add_item():
             return jsonify({"error": "Thiếu tiêu đề sản phẩm"}), 400
         
         data["status"] = "NEW"
+        # Đảm bảo có cột post_status (nếu chưa có từ data)
+        if not data.get('post_status'):
+            data['post_status'] = 'publish' 
+
         from services.sheet_service import SheetService
         from models.Woocommerce_db import WoocommerceDbModel
         SheetService.append_row(WoocommerceDbModel.SHEET_NAME, data)
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@api_bp.route('/api/v2/woocommerce/update-item', methods=['POST'])
+def woocommerce_update_item():
+    """Cập nhật thông tin sản phẩm trong hàng đợi."""
+    data = request.json
+    index = data.get('index')
+    update_data = data.get('data')
+    try:
+        from services.sheet_service import SheetService
+        from models.Woocommerce_db import WoocommerceDbModel
+        
+        SheetService.update_row(WoocommerceDbModel.SHEET_NAME, index, update_data)
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@api_bp.route('/api/v2/woocommerce/delete-item', methods=['POST'])
+def woocommerce_delete_item():
+    """Xóa sản phẩm khỏi hàng đợi."""
+    data = request.json
+    index = data.get('index')
+    try:
+        from services.sheet_service import SheetService
+        from models.Woocommerce_db import WoocommerceDbModel
+        
+        SheetService.delete_row(WoocommerceDbModel.SHEET_NAME, index)
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500

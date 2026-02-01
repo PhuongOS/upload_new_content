@@ -836,17 +836,21 @@ async function syncToPlatformDb(mediaItem, platform, scheduleTime, isRevoke = fa
 // CONFIRM MODAL LOGIC
 /**
  * Hiển thị modal xác nhận tùy chỉnh.
- * @param {Object|string} options - Thông báo hoặc object cấu hình
+ * @param {Object|string} titleOrOptions - Tiêu đề hoặc object cấu hình
+ * @param {string} [message] - Nội dung thông báo (nếu đối số 1 là string)
  * @returns {Promise<boolean>}
  */
-function showConfirmModal(options) {
-    if (typeof options === 'string') {
-        options = { message: options };
+function showConfirmModal(titleOrOptions, message) {
+    let options = {};
+    if (typeof titleOrOptions === 'string') {
+        options = { title: titleOrOptions, message: message || "" };
+    } else {
+        options = titleOrOptions;
     }
 
     const {
         title = "Xác nhận?",
-        message = "Bạn có chắc chắn muốn thực hiện hành động này?",
+        message: finalMessage = "Bạn có chắc chắn muốn thực hiện hành động này?",
         type = "danger", // danger, primary, warning, success
         okText = "Xác nhận",
         cancelText = "Hủy",
@@ -863,7 +867,7 @@ function showConfirmModal(options) {
     const textInput = document.getElementById('confirmTextInput');
 
     // Cập nhật nội dung
-    msgEl.innerText = message;
+    msgEl.innerHTML = finalMessage; // Sử dụng innerHTML để hiển thị được HTML preview
     titleEl.innerText = title;
     okBtn.innerText = okText;
     cancelBtn.innerText = cancelText;
@@ -972,6 +976,7 @@ confirmBtn.onclick = async () => {
     const parentId = parentFolderInput.value.trim();
     const sheetId = sheetIdInput.value.trim();
     const folderName = folderNameInput.value.trim();
+    const uploadToWp = document.getElementById('uploadWpCheck').checked;
 
     if (!parentId || !sheetId) return alert("Vui lòng cấu hình Parent Folder ID và Sheet ID!");
     if (!folderName) return alert("Vui lòng nhập Chủ đề / Tên thư mục!");
@@ -985,6 +990,7 @@ confirmBtn.onclick = async () => {
     formData.append('parentId', parentId);
     formData.append('sheetId', sheetId);
     formData.append('folderName', folderName);
+    formData.append('uploadToWp', uploadToWp);
     formData.append('thumbnail', thumbnailInput.files[0]);
 
     for (let i = 0; i < fileInput.files.length; i++) {
@@ -1793,25 +1799,98 @@ function renderWooDb(data) {
         if (item.status === 'SUCCESS') statusClass = 'status-success';
         if (item.status === 'ERROR') statusClass = 'status-danger';
 
+        const postStatus = item.post_status || 'publish';
+        const postStatusLabel = postStatus === 'draft' ? '<br><small style="color:#fbbf24">(Bản nháp)</small>' : '';
+
         return `
             <tr>
                 <td>${index + 1}</td>
                 <td>
                     <div style="font-weight: 500">${item.title}</div>
-                    <div style="font-size: 11px; color: var(--text-muted)">${item.wc_id ? 'ID: ' + item.wc_id : 'Source: ' + (item.source_url || 'N/A')}</div>
+                    <div style="font-size: 11px; color: var(--text-muted)">${item.wc_id ? 'ID: ' + item.wc_id : 'Source: ' + (item.source_url || 'N/A')}${postStatusLabel}</div>
                 </td>
                 <td>${item.regular_price}${item.sale_price ? ' <del style="font-size:11px">' + item.sale_price + '</del>' : ''}</td>
                 <td>${item.categories || 'N/A'}</td>
                 <td><span class="status-badge ${statusClass}">${item.status || 'NEW'}</span></td>
                 <td>
                     <div class="action-buttons">
-                        ${item.status !== 'SUCCESS' ? `<button class="btn btn-sm btn-primary" onclick="postWooItem(${index})"><i class="fas fa-paper-plane"></i></button>` : ''}
-                        ${item.wc_link ? `<a href="${item.wc_link}" target="_blank" class="btn btn-sm btn-secondary"><i class="fas fa-external-link-alt"></i></a>` : ''}
+                        ${item.status !== 'SUCCESS' ? `
+                            <button class="btn btn-sm btn-primary" onclick="postWooItem(${index})" title="Đăng bài"><i class="fas fa-paper-plane"></i></button>
+                            <button class="btn btn-sm btn-warning" onclick="editWooItem(${index})" title="Chỉnh sửa"><i class="fas fa-edit"></i></button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteWooItem(${index})" title="Xóa"><i class="fas fa-trash"></i></button>
+                        ` : ''}
+                        ${item.wc_link ? `<a href="${item.wc_link}" target="_blank" class="btn btn-sm btn-secondary" title="Xem bài viết"><i class="fas fa-external-link-alt"></i></a>` : ''}
                     </div>
                 </td>
             </tr>
         `;
     }).join('');
+}
+
+// Edit/Delete Items in Queue
+function editWooItem(index) {
+    const item = currentWooData[index];
+    if (!item) return;
+
+    document.getElementById('editWooIndex').value = index;
+    document.getElementById('editWooTitle').value = item.title;
+    document.getElementById('editWooPostStatus').value = item.post_status || 'publish';
+
+    document.getElementById('editWooModal').classList.add('visible');
+}
+
+function closeEditWooModal() {
+    document.getElementById('editWooModal').classList.remove('visible');
+}
+
+async function saveWooItemEdit() {
+    const index = parseInt(document.getElementById('editWooIndex').value);
+    const newTitle = document.getElementById('editWooTitle').value.trim();
+    const newPostStatus = document.getElementById('editWooPostStatus').value;
+
+    if (!newTitle) return showErrorModal("Lỗi", "Tiêu đề không được để trống.");
+
+    try {
+        const item = { ...currentWooData[index], title: newTitle, post_status: newPostStatus };
+        const res = await fetch('/api/v2/woocommerce/update-item', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ index: index, data: item })
+        });
+
+        if (res.ok) {
+            showSuccessModal("Thành công", "Đã cập nhật thông tin sản phẩm.");
+            closeEditWooModal();
+            loadWooDb();
+        } else {
+            const err = await res.json();
+            showErrorModal("Lỗi", err.error);
+        }
+    } catch (err) {
+        showErrorModal("Lỗi kết nối", err.message);
+    }
+}
+
+async function deleteWooItem(index) {
+    if (await showConfirmModal("Xác nhận xóa", `Bạn có chắc chắn muốn xóa sản phẩm "${currentWooData[index].title}" khỏi hàng đợi?`)) {
+        try {
+            const res = await fetch('/api/v2/woocommerce/delete-item', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ index: index })
+            });
+
+            if (res.ok) {
+                showSuccessModal("Đã xóa", "Sản phẩm đã được gỡ khỏi hàng đợi.");
+                loadWooDb();
+            } else {
+                const err = await res.json();
+                showErrorModal("Lỗi", err.error);
+            }
+        } catch (err) {
+            showErrorModal("Lỗi kết nối", err.message);
+        }
+    }
 }
 
 async function postWooItem(index) {
@@ -1870,6 +1949,8 @@ async function loadWooConfig() {
         document.getElementById('wc_url').value = config.site_url || "";
         document.getElementById('wc_key').value = config.consumer_key || "";
         document.getElementById('wc_secret').value = config.consumer_secret || "";
+        document.getElementById('wp_user').value = config.wp_user || "";
+        document.getElementById('wp_app_pass').value = config.wp_app_pass || "";
     } catch (err) {
         console.error("Lỗi load config WC:", err);
     }
@@ -1879,7 +1960,9 @@ async function saveWooConfig() {
     const data = {
         site_url: document.getElementById('wc_url').value.trim(),
         consumer_key: document.getElementById('wc_key').value.trim(),
-        consumer_secret: document.getElementById('wc_secret').value.trim()
+        consumer_secret: document.getElementById('wc_secret').value.trim(),
+        wp_user: document.getElementById('wp_user').value.trim(),
+        wp_app_pass: document.getElementById('wp_app_pass').value.trim()
     };
 
     try {
@@ -1947,17 +2030,51 @@ async function analyzeWooUrl() {
             .map(u => `<img src="${u.trim()}" style="width: 80px; height: 80px; object-fit: cover; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1)">`)
             .join('');
 
+        // Lấy mã nhúng YouTube nếu có trong description
+        let youtubePreviewHtml = '';
+        if (data.description) {
+            // Trường hợp 1: Mã nhúng cũ (iframe trong div)
+            const iframeMatch = data.description.match(/<div class="video-container".*?<\/div>/s);
+            if (iframeMatch) {
+                youtubePreviewHtml = `<div style="margin-top: 15px; border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1)">
+                    <p style="padding: 5px 10px; background: rgba(255,255,255,0.05); font-size: 11px; margin: 0; opacity: 0.7">Youtube Video Preview</p>
+                    ${iframeMatch[0]}
+                </div>`;
+            } else {
+                // Trường hợp 2: URL thuần (mới) - Tìm link youtube để tạo preview
+                const ytUrlMatch = data.description.match(/https:\/\/www\.youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/);
+                if (ytUrlMatch) {
+                    const videoId = ytUrlMatch[1];
+                    youtubePreviewHtml = `<div style="margin-top: 15px; border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1)">
+                        <p style="padding: 5px 10px; background: rgba(255,255,255,0.05); font-size: 11px; margin: 0; opacity: 0.7">Youtube Video Preview</p>
+                        <div style="text-align:center;"><iframe width="100%" height="200" src="https://www.youtube.com/embed/${videoId}" frameborder="0" allowfullscreen></iframe></div>
+                    </div>`;
+                }
+            }
+        }
+
         const previewHtml = `
             <div style="text-align: left; background: rgba(0,0,0,0.2); padding: 15px; border-radius: 12px; font-size: 13px; color: #e0e0e0; line-height: 1.6">
                 <div style="margin-bottom: 10px; font-weight: 600; color: var(--accent); font-size: 14px">${data.title}</div>
                 <div style="margin-bottom: 10px; display: flex; gap: 8px; flex-wrap: wrap">${imagesHtml}</div>
-                <div style="margin-bottom: 5px"><b>Giá:</b> ${data.regular_price} ${data.sale_price ? `<del style="opacity: 0.5; margin-left: 5px">${data.sale_price}</del>` : ''}</div>
+                ${youtubePreviewHtml}
+                <div style="margin-top: 10px; margin-bottom: 5px"><b>Giá:</b> ${data.regular_price} ${data.sale_price ? `<del style="opacity: 0.5; margin-left: 5px">${data.sale_price}</del>` : ''}</div>
                 <div style="margin-bottom: 5px"><b>Danh mục:</b> ${data.categories || 'Tự động'}</div>
-                <div style="opacity: 0.8; font-style: italic">${data.short_description}</div>
+                <div style="opacity: 0.8; font-style: italic; margin-bottom: 15px">${data.short_description}</div>
+                
+                <div class="input-group" style="margin-top: 10px; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px">
+                    <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.7">Chế độ đăng bài</label>
+                    <select id="confirmPostStatus" class="card-select" style="margin-top: 5px; background: rgba(0,0,0,0.3)">
+                        <option value="publish">Public (Công khai)</option>
+                        <option value="draft">Draft (Bản nháp)</option>
+                    </select>
+                </div>
             </div>
         `;
 
         if (await showConfirmModal("Kết quả AI Phân tích", previewHtml + "<br>Bạn có muốn thêm sản phẩm này vào hàng đợi đăng bài không?")) {
+            const selectedStatus = document.getElementById('confirmPostStatus').value;
+
             // Sử dụng FormData để gửi kèm file ảnh lên Drive
             const formData = new FormData();
             formData.append('title', data.title);
@@ -1968,6 +2085,7 @@ async function analyzeWooUrl() {
             formData.append('categories', data.categories || '');
             formData.append('images', data.images || '');
             formData.append('source_url', url);
+            formData.append('post_status', selectedStatus); // Gửi trạng thái đã chọn
             formData.append('parent_folder_id', localStorage.getItem('parentFolderId') || 'root');
 
             // Đính kèm các file ảnh từ input

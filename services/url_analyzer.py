@@ -124,24 +124,65 @@ class URLAnalyzer:
         """
         
         try:
-            ai_response = self.ai.generate_content(user_prompt)
-            json_match = re.search(r"\{.*\}", ai_response, re.DOTALL)
-            if json_match:
-                result = json.loads(json_match.group())
+            ai_response = self.ai.generate_content(user_prompt, is_json=True)
+            
+            # Log length for debugging
+            print(f"[URLAnalyzer] AI Response length: {len(ai_response)}")
+            if not ai_response:
+                return {"error": "AI returned an empty response. Possible safety filter or quota issue.", "raw": ""}
+
+            # Robust JSON extraction: look for markdown code blocks first, then first '{' to last '}'
+            json_content = ""
+            
+            # 1. Try to find content within ```json ... ```
+            code_block_match = re.search(r"```json\s*(.*?)\s*```", ai_response, re.DOTALL)
+            if code_block_match:
+                json_content = code_block_match.group(1)
+            else:
+                # 2. Extract from the first '{' to the last '}'
+                json_match = re.search(r"(\{.*\})", ai_response, re.DOTALL)
+                if json_match:
+                    json_content = json_match.group(1)
+                else:
+                    # 3. If in JSON mode, sometimes it's just the plain JSON string
+                    if ai_response.strip().startswith('{'):
+                        json_content = ai_response.strip()
+            
+            if json_content:
+                try:
+                    result = json.loads(json_content)
+                except json.JSONDecodeError as je:
+                    print(f"[URLAnalyzer] JSON Decode Error: {je}")
+                    # Log raw only when error occurs to avoid log pollution but preserve debugging info
+                    print(f"[URLAnalyzer] RAW Response: {ai_response}")
+                    return {"error": f"JSON Decode Error: {str(je)}", "raw": ai_response}
                 
                 # Chèn Video Youtube nếu có
                 if youtube_url:
                     video_id = ""
-                    if 'v=' in youtube_url:
-                        video_id = youtube_url.split('v=')[-1].split('&')[0]
-                    elif 'youtu.be/' in youtube_url:
-                        video_id = youtube_url.split('youtu.be/')[-1].split('?')[0]
+                    # Regex hỗ trợ nhiều format: v=, shorts/, live/, youtu.be/
+                    patterns = [
+                        r"v=([a-zA-Z0-9_-]{11})",
+                        r"shorts/([a-zA-Z0-9_-]{11})",
+                        r"live/([a-zA-Z0-9_-]{11})",
+                        r"youtu.be/([a-zA-Z0-9_-]{11})"
+                    ]
+                    for pattern in patterns:
+                        match = re.search(pattern, youtube_url)
+                        if match:
+                            video_id = match.group(1)
+                            break
                     
                     if video_id:
-                        iframe = f'<div class="video-container" style="text-align:center; margin-bottom:20px;"><iframe width="560" height="315" src="https://www.youtube.com/embed/{video_id}" frameborder="0" allowfullscreen></iframe></div>\n'
-                        result['description'] = iframe + result.get('description', '')
+                        # Sử dụng URL thuần để WordPress tự oEmbed (An toàn hơn iframe bị chặn bởi KSES)
+                        video_url_embed = f'https://www.youtube.com/watch?v={video_id}\n'
+                        # Thêm wrapper div nếu muốn căn giữa, nhưng để WordPress tự xử lý embed thường tốt hơn
+                        # Ở đây ta dùng định dạng URL trên 1 dòng riêng để oEmbed kích hoạt
+                        result['description'] = video_url_embed + result.get('description', '')
                 
                 return result
+            
+            print(f"[URLAnalyzer] No JSON block found in response: {ai_response[:200]}...")
             return {"error": "AI did not return valid JSON", "raw": ai_response}
         except Exception as e:
             return {"error": f"AI Error: {str(e)}"}
