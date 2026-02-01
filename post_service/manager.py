@@ -1070,15 +1070,9 @@ class PostManager:
                                 url_mapping[img_url] = new_wp_url
                                 print(f"[WC-Publish] Image #{idx+1}: Upload thành công, ID={media_id}, URL={new_wp_url}")
                             else:
-                                print(f"[WC-Publish] Image #{idx+1}: Upload thất bại qua Media API: {upload_res.get('error')}")
-                                # QUAN TRỌNG: Nếu sideload URL gốc thường bị chặn, ta KHÔNG nên gửi kềm vào product_data
-                                # vì WordPress sẽ từ chối cả sản phẩm nếu có 1 ảnh 'không hợp lệ'.
-                                # Chỉ giữ lại nếu là ảnh đầu tiên (Featured Image) để thử vận may, hoặc bỏ qua hẳn nếu muốn an toàn.
-                                if idx == 0:
-                                    print(f"[WC-Publish] Image #1: Giữ lại URL gốc làm ảnh đại diện (Featured Image)")
-                                    final_image_objs.append({"src": img_url})
-                                else:
-                                    print(f"[WC-Publish] Image #{idx+1}: Bỏ qua ảnh này để tránh làm hỏng cả bài đăng.")
+                                print(f"[WC-Publish] Image #{idx+1}: Upload thất bại qua Media API: {upload_res.get('error')}. Sẽ giữ lại link gốc làm dự phòng.")
+                                # Giữ lại URL gốc để WooCommerce tự sideload (tỷ lệ thành công thấp hơn nhưng tốt hơn là xóa hẳn)
+                                final_image_objs.append({"src": img_url})
                                 
                         except Exception as e:
                             print(f"[WC-Publish] Error processing image #{idx+1}: {e}")

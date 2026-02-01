@@ -974,6 +974,10 @@ def woocommerce_add_item():
                         new_images_list = [existing_images] if existing_images else []
                         new_images_list.extend(drive_links)
                         data['images'] = ",".join(filter(None, new_images_list))
+                        
+                        # [FIX] Chèn ảnh vào cuối bài viết để giải quyết yêu cầu của người dùng
+                        added_imgs_html = "".join([f'<p style="text-align: center;"><img src="{url}" alt="{data.get("title")}" style="max-width:100%; height:auto;" /></p>' for url in drive_links])
+                        data['description'] = data.get('description', '') + added_imgs_html
         
         if not data.get('title'):
             return jsonify({"error": "Thiếu tiêu đề sản phẩm"}), 400

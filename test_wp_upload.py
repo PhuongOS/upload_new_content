@@ -4,8 +4,8 @@ from requests.auth import HTTPBasicAuth
 import os
 
 site_url = 'https://dientulamphat.com/'
-wp_user = 'n8n_wordpress'
-wp_app_pass = 'q3V5g95cUcyJrRTY513AmnM8'
+wp_user = 'lam_phat'
+wp_app_pass = 'NgOy qOEx nOJ3 ioql MtMu 1OTi'
 test_image_url = 'https://placehold.co/600x400.png'
 
 def test_upload():
