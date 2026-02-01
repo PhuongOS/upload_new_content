@@ -29,6 +29,7 @@ let currentCalendarData = [];
 let currentFacebookData = [];
 let currentYoutubeData = [];
 let currentWooData = [];
+let allWooCategories = []; // Danh sách category từ WooCommerce
 let activeScheduleTarget = { index: null, platform: null };
 
 // Filter State
@@ -1829,7 +1830,7 @@ function renderWooDb(data) {
 }
 
 // Edit/Delete Items in Queue
-function editWooItem(index) {
+async function editWooItem(index) {
     const item = currentWooData[index];
     if (!item) return;
 
@@ -1842,10 +1843,62 @@ function editWooItem(index) {
     document.getElementById('editWooDesc').value = item.description || "";
     document.getElementById('editWooShortDesc').value = item.short_description || "";
 
+    // Load categories from API
+    await loadWooCategories(item.categories);
+
     // Reset tabs
     switchWooEditTab('editor');
 
     document.getElementById('editWooModal').classList.add('visible');
+}
+
+async function loadWooCategories(selectedIds = "") {
+    const container = document.getElementById('editWooCategoriesContainer');
+    if (!container) return;
+
+    if (allWooCategories.length === 0) {
+        try {
+            const res = await fetch('/api/v2/woocommerce/categories');
+            const result = await res.json();
+            if (result.success) {
+                allWooCategories = result.data;
+            } else {
+                container.innerHTML = `<span style="color:var(--danger); font-size:11px;">Lỗi: ${result.error}</span>`;
+                return;
+            }
+        } catch (err) {
+            container.innerHTML = `<span style="color:var(--danger); font-size:11px;">Lỗi kết nối API</span>`;
+            return;
+        }
+    }
+
+    renderCategoryChips(selectedIds);
+}
+
+function renderCategoryChips(selectedIds = "") {
+    const container = document.getElementById('editWooCategoriesContainer');
+    const selectedArray = selectedIds.split(',').map(s => s.trim()).filter(s => s);
+
+    container.innerHTML = allWooCategories.map(cat => {
+        const isActive = selectedArray.includes(cat.id.toString()) || selectedArray.includes(cat.name);
+        return `<div class="category-chip ${isActive ? 'active' : ''}" onclick="toggleWooCategory(this, '${cat.id}')">${cat.name}</div>`;
+    }).join('');
+}
+
+function toggleWooCategory(el, id) {
+    el.classList.toggle('active');
+    const container = document.getElementById('editWooCategoriesContainer');
+    const hiddenInput = document.getElementById('editWooCategories');
+
+    const activeChips = container.querySelectorAll('.category-chip.active');
+    const selectedIds = Array.from(activeChips).map(chip => {
+        // Tìm ID từ tên nếu cần, nhưng ở đây ta đã truyền ID vào toggleWooCategory
+        const catName = chip.innerText;
+        const cat = allWooCategories.find(c => c.name === catName);
+        return cat ? cat.id : '';
+    }).filter(id => id);
+
+    hiddenInput.value = selectedIds.join(',');
 }
 
 function switchWooEditTab(tab) {

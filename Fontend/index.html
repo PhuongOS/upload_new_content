@@ -676,8 +676,14 @@
                 </div>
 
                 <div class="input-group">
-                    <label>Danh mục (ID hoặc tên, cách nhau dấu phẩy)</label>
-                    <input type="text" id="editWooCategories" placeholder="Ví dụ: 12, 45">
+                    <label>Danh mục (Chọn từ WooCommerce)</label>
+                    <div id="editWooCategoriesContainer" class="category-chips-container"
+                        style="max-height: 120px; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 8px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid var(--glass-border);">
+                        <span class="sub-text">Đang tải danh mục...</span>
+                    </div>
+                    <input type="hidden" id="editWooCategories">
+                    <small style="color: rgba(255,255,255,0.4); margin-top: 5px;">Nhấp để chọn hoặc bỏ chọn danh
+                        mục.</small>
                 </div>
 
                 <div class="input-group">
