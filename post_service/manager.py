@@ -1030,8 +1030,8 @@ class PostManager:
                         fid_match = regex.search(r'id=([a-zA-Z0-9_-]+)', u) or regex.search(r'/d/([a-zA-Z0-9_-]+)', u)
                         if fid_match:
                             file_id = fid_match.group(1)
-                            # Chuyển sang format lh3 siêu sạch cho WordPress
-                            u = f"https://lh3.googleusercontent.com/d/{file_id}#.jpg"
+                            # Chuyển sang format lh3 siêu sạch cho WordPress (s0 = full size)
+                            u = f"https://lh3.googleusercontent.com/d/{file_id}=s0?ext=.jpg"
                     sanitized_urls.append(u)
 
                 if sanitized_urls:

@@ -258,9 +258,8 @@ def convert_drive_link_to_direct(link):
         file_id = link.split('/d/')[-1].split('/')[0]
     
     if file_id:
-        # Use lh3.googleusercontent.com for a more "standard" looking image URL
-        # and append #.jpg fragment to trick WordPress's extension check
-        return f"https://lh3.googleusercontent.com/d/{file_id}#.jpg"
+        # Use s0 for original size and ?ext=.jpg for WP compatibility
+        return f"https://lh3.googleusercontent.com/d/{file_id}=s0?ext=.jpg"
     return link
 
 def upload_product_images_to_drive(folder_name, files_data, parent_id="root"):
