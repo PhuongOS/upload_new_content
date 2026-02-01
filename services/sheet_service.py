@@ -5,6 +5,8 @@ from models.Youtube_db import YoutubeDbModel
 from models.Facebook_Config import FacebookConfModel
 from models.Youtube_Config import YoutubeConfModel
 from models.History_db import HistoryDbModel
+from models.Woocommerce_Config import WoocommerceConfModel
+from models.Woocommerce_db import WoocommerceDbModel
 from logic import get_creds
 
 class SheetService:
@@ -17,7 +19,9 @@ class SheetService:
             "Youtube_db": YoutubeDbModel,
             "Facebook_Config": FacebookConfModel,
             "Youtube_Config": YoutubeConfModel,
-            "Published_History": HistoryDbModel
+            "Published_History": HistoryDbModel,
+            "Woocommerce_Config": WoocommerceConfModel,
+            "Woocommerce_db": WoocommerceDbModel
         }
         return models.get(name)
 

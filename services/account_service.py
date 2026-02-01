@@ -16,12 +16,12 @@ CREDENTIALS_FILE = 'assect/AouthGoogle.json'
 
 # Scopes cần thiết cho YouTube và User Info
 YOUTUBE_SCOPES = [
-    "openid",  # Required when using userinfo scopes
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.force-ssl",
     "https://www.googleapis.com/auth/youtube.readonly",
-    "https://www.googleapis.com/auth/userinfo.email",
-    "https://www.googleapis.com/auth/userinfo.profile"
 ]
 
 # Đảm bảo thư mục tokens tồn tại
@@ -67,34 +67,52 @@ class AccountService:
         return accounts.get(account_id)
 
     @staticmethod
-    def add_account_start():
+    def _is_desktop_creds():
+        """Kiểm tra xem file credentials là loại Desktop hay Web."""
+        try:
+            if not os.path.exists(CREDENTIALS_FILE):
+                return True
+            with open(CREDENTIALS_FILE, 'r') as f:
+                data = json.load(f)
+                return "installed" in data
+        except:
+            return True
+
+    @staticmethod
+    def add_account_start(host_url=None):
         """
         Bắt đầu flow OAuth để thêm tài khoản mới.
-        Trả về URL để redirect user đến consent screen.
         """
         if not os.path.exists(CREDENTIALS_FILE):
             raise FileNotFoundError(f"Không tìm thấy file credentials tại {CREDENTIALS_FILE}")
 
-        # Tạo account_id tạm để tracking
-        temp_id = str(uuid.uuid4())[:8]
-        
+        is_desktop = AccountService._is_desktop_creds()
+        if is_desktop:
+            # Nếu đang chạy local, dùng port thực tế thay vì ép 8080
+            if host_url and ('localhost' in host_url or '127.0.0.1' in host_url):
+                redirect_uri = f"{host_url.rstrip('/')}/api/auth/callback"
+            else:
+                redirect_uri = 'http://localhost:8080/api/auth/callback'
+        else:
+            redirect_uri = f"{host_url.rstrip('/')}/api/auth/callback" if host_url else 'http://localhost:8080/api/auth/callback'
+
         flow = InstalledAppFlow.from_client_secrets_file(
             CREDENTIALS_FILE, 
             YOUTUBE_SCOPES,
-            redirect_uri='http://localhost:8080/'  # Hoặc URL callback của bạn
+            redirect_uri=redirect_uri
         )
         
         # Lưu state để verify callback
         auth_url, state = flow.authorization_url(
             access_type='offline',
             include_granted_scopes='true',
-            prompt='consent'  # Force consent để luôn nhận refresh_token
+            prompt='consent',  # Force consent để luôn nhận refresh_token
+            state='account'
         )
         
         return {
             "auth_url": auth_url,
-            "state": state,
-            "temp_id": temp_id
+            "redirect_uri": redirect_uri
         }
 
     @staticmethod
@@ -106,7 +124,11 @@ class AccountService:
         if not os.path.exists(CREDENTIALS_FILE):
             raise FileNotFoundError(f"Không tìm thấy file credentials tại {CREDENTIALS_FILE}")
 
-        flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, YOUTUBE_SCOPES)
+        flow = InstalledAppFlow.from_client_secrets_file(
+            CREDENTIALS_FILE, 
+            YOUTUBE_SCOPES,
+            redirect_uri='http://localhost:8080/api/auth/callback'
+        )
         
         try:
             creds = flow.run_local_server(port=8080, host='localhost', open_browser=True)
@@ -150,6 +172,42 @@ class AccountService:
             "channels": channels,
             "synced_to_sheet": sync_result.get('added', 0)
         }
+
+    @staticmethod
+    def fetch_and_save_account_token(code, redirect_uri='http://localhost:8080/api/auth/callback'):
+        """Lấy token cho multi-account từ code và lưu lại."""
+        flow = InstalledAppFlow.from_client_secrets_file(
+            CREDENTIALS_FILE, 
+            YOUTUBE_SCOPES,
+            redirect_uri=redirect_uri
+        )
+        flow.fetch_token(code=code)
+        creds = flow.credentials
+
+        # Lấy thông tin user để đặt tên file
+        user_info = AccountService._fetch_user_info(creds)
+        channels = AccountService._fetch_youtube_channels(creds)
+        account_id = user_info.get("email", str(uuid.uuid4())[:8]).replace("@", "_at_").replace(".", "_")
+
+        # Lưu token
+        token_file = os.path.join(TOKENS_DIR, f"{account_id}.json")
+        with open(token_file, 'w') as f:
+            f.write(creds.to_json())
+
+        # Lưu metadata
+        accounts = AccountService._load_accounts()
+        accounts[account_id] = {
+            "email": user_info.get("email"),
+            "name": user_info.get("name"),
+            "picture": user_info.get("picture"),
+            "channels": channels
+        }
+        AccountService._save_accounts(accounts)
+
+        # Sync channels
+        AccountService._sync_channels_to_sheet(channels, user_info.get("email", ""), account_id)
+
+        return {"success": True, "email": user_info.get("email"), "account_id": account_id}
 
     @staticmethod
     def remove_account(account_id):
@@ -267,12 +325,14 @@ class AccountService:
             # Lấy danh sách kênh đã có trong Sheet
             existing_configs = SheetService.get_all_rows("Youtube_Config")
             
-            # Tạo map channel_id -> (index, config)
+            # Tạo map channel_id -> list of (index, config)
             existing_map = {}
             for idx, config in enumerate(existing_configs):
                 cid = config.get("channel_id")
                 if cid:
-                    existing_map[cid] = (idx, config)
+                    if cid not in existing_map:
+                        existing_map[cid] = []
+                    existing_map[cid].append((idx, config))
             
             # Xử lý từng kênh
             for channel in channels:
@@ -282,17 +342,17 @@ class AccountService:
                     
                 if channel_id in existing_map:
                     # Kênh đã tồn tại - kiểm tra xem cần cập nhật account_id không
-                    row_idx, existing_config = existing_map[channel_id]
-                    existing_account_id = existing_config.get("account_id", "").strip()
-                    
-                    if not existing_account_id:
-                        # Cập nhật account_id cho kênh đã tồn tại
-                        updated_config = {
-                            "channel_name": existing_config.get("channel_name", channel.get("title", "")),
-                            "channel_id": channel_id,
-                            "gmail_channel": email or existing_config.get("gmail_channel", ""),
-                            "account_id": account_id
-                        }
+                    for row_idx, existing_config in existing_map[channel_id]:
+                        existing_account_id = existing_config.get("account_id", "").strip()
+                        
+                        if not existing_account_id:
+                            # Cập nhật account_id cho kênh đã tồn tại
+                            updated_config = {
+                                "channel_name": existing_config.get("channel_name", channel.get("title", "")),
+                                "channel_id": channel_id,
+                                "gmail_channel": email or existing_config.get("gmail_channel", ""),
+                                "account_id": account_id
+                            }
                         try:
                             SheetService.update_row("Youtube_Config", row_idx, updated_config)
                             updated_count += 1

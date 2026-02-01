@@ -2,24 +2,100 @@ import os
 import re
 import uuid
 import threading
+import csv
+import io
 from flask import Blueprint, request, jsonify, redirect
 from googleapiclient.discovery import build
-from logic import get_creds, tasks, background_upload, delete_drive_file, TOKEN_FILE
+from logic import (
+    get_creds, tasks, background_upload, delete_drive_file, 
+    TOKEN_FILE, get_auth_url_main, fetch_and_save_token, _is_desktop_creds
+)
 from services.sheet_service import SheetService
 from services.account_service import AccountService
+from models.Woocommerce_Config import WoocommerceConfModel
+from models.Woocommerce_db import WoocommerceDbModel
+from post_service.woocommerce_publisher import WoocommercePublisher
+from services.url_analyzer import URLAnalyzer
 
 # Khởi tạo Blueprint cho các API
 api_bp = Blueprint('api', __name__)
 
-# --- API XÁC THỰC (AUTHENTICATION) ---
-
 @api_bp.route('/api/auth/login')
 def login():
+    """Bắt đầu flow đăng nhập Google."""
     try:
-        get_creds(interactive=True)
-        return redirect('/')
+        # Tự động nhận diện host/protocol (Đã fix: Không ép 8080 để chạy được trên port 3000 local)
+        protocol = request.headers.get('X-Forwarded-Proto', 'http')
+        host = request.headers.get('Host', request.host)
+        host_url = f"{protocol}://{host}"
+
+        # Tính toán auth_url (Hàm này tự nhận diện Desktop vs Web App)
+        auth_url, _ = get_auth_url_main(host_url=host_url)
+        
+        # Nếu là request từ frontend (AJAX), trả về JSON
+        if request.args.get('format') == 'json':
+            return jsonify({
+                "success": False,
+                "needs_manual_auth": True,
+                "auth_url": auth_url,
+                "message": "Vui lòng mở URL này để xác thực nếu trình duyệt không tự mở."
+            })
+            
+        return redirect(auth_url)
     except Exception as e:
-        return f"Lỗi đăng nhập: {e}", 500
+        return f"Lỗi khởi tạo đăng nhập: {e}", 500
+
+@api_bp.route('/api/auth/callback')
+def auth_callback():
+    """Xử lý callback từ Google sau khi user xác thực thành công."""
+    code = request.args.get('code')
+    if not code:
+        return "Thiếu mã xác thực (code)", 400
+    
+    try:
+        # Re-construct redirect_uri (Phải khớp chính xác với lúc bắt đầu)
+        is_desktop = _is_desktop_creds()
+        protocol = request.headers.get('X-Forwarded-Proto', 'http')
+        host = request.headers.get('Host', request.host)
+        
+        if is_desktop:
+            # Desktop App: Nếu đang chạy local, dùng đúng port đang chạy thay vì ép 8080
+            if 'localhost' in host or '127.0.0.1' in host:
+                redirect_uri = f"http://{host}/api/auth/callback"
+            else:
+                redirect_uri = 'http://localhost:8080/api/auth/callback'
+        else:
+            # Web App: Dùng domain thực tế
+            redirect_uri = f"{protocol}://{host}/api/auth/callback"
+            
+        print(f"[Auth] Callback received. Exchange with redirect_uri: {redirect_uri}")
+            
+        state = request.args.get('state', 'main')
+        
+        if state == 'account':
+            # Xử lý cho Multi-Account YouTube
+            AccountService.fetch_and_save_account_token(code, redirect_uri=redirect_uri)
+            header_text = "Thêm tài khoản thành công!"
+            message_text = "Tài khoản YouTube đã được liên kết."
+        else:
+            # Xử lý cho tài khoản chính (Drive/Sheets)
+            fetch_and_save_token(code, redirect_uri=redirect_uri)
+            header_text = "Xác thực thành công!"
+            message_text = "Tài khoản chính đã được kết nối."
+
+        return f"""
+            <html>
+                <body style="font-family: sans-serif; text-align: center; padding: 50px; background: #121212; color: white;">
+                    <h1 style="color: #4CAF50;">{header_text}</h1>
+                    <p>{message_text}</p>
+                    <p>Bạn có thể đóng cửa sổ này và quay lại ứng dụng.</p>
+                    <button onclick="window.close()" style="padding: 10px 20px; cursor: pointer; background: #333; color: white; border: 1px solid #444; border-radius: 4px;">Đóng cửa sổ</button>
+                    <script>setTimeout(() => window.close(), 3000);</script>
+                </body>
+            </html>
+        """
+    except Exception as e:
+        return f"Lỗi lưu token: {e}", 500
 
 @api_bp.route('/api/auth/status')
 def auth_status():
@@ -67,7 +143,11 @@ def add_account():
             return jsonify(result)
         else:
             # Remote access: Trả về URL để user tự mở
-            auth_info = AccountService.add_account_start()
+            protocol = request.headers.get('X-Forwarded-Proto', 'http')
+            host = request.headers.get('Host', request.host)
+            host_url = f"{protocol}://{host}"
+
+            auth_info = AccountService.add_account_start(host_url=host_url)
             return jsonify({
                 "success": False, 
                 "needs_manual_auth": True,
@@ -572,8 +652,12 @@ def ai_generate():
     except Exception as e:
         error_msg = str(e)
         status_code = 500
-        if "429" in error_msg or "Too Many Requests" in error_msg:
+        if any(code in error_msg for code in ["429", "Too Many Requests", "exhausted"]):
             status_code = 429
+        elif "503" in error_msg or "Service Unavailable" in error_msg:
+            status_code = 503
+        elif "403" in error_msg or "Permission denied" in error_msg:
+            status_code = 403
         return jsonify({"error": error_msg}), status_code
 
 # --- DỊCH VỤ ĐĂNG BÀI (POST SERVICE) ---
@@ -732,3 +816,127 @@ def post_get_details(index):
     if res["success"]:
         return jsonify(res)
     return jsonify(res), 400
+
+# --- WOOCOMMERCE ENDPOINTS ---
+
+@api_bp.route('/api/v2/woocommerce/config', methods=['GET', 'POST'])
+def woocommerce_config():
+    """Lấy hoặc lưu cấu hình WooCommerce."""
+    if request.method == 'POST':
+        data = request.json
+        try:
+            # SheetService.update_row tự gọi model.from_dict(data)
+            SheetService.update_row(WoocommerceConfModel.SHEET_NAME, 0, data)
+            return jsonify({"success": True})
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 500
+    else:
+        try:
+            rows = SheetService.get_all_rows(WoocommerceConfModel.SHEET_NAME)
+            config = rows[0] if rows else {}
+            return jsonify(config)
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 500
+
+@api_bp.route('/api/v2/woocommerce/categories', methods=['GET'])
+def woocommerce_categories():
+    """Lấy danh sách categories từ WooCommerce."""
+    try:
+        rows = SheetService.get_all_rows(WoocommerceConfModel.SHEET_NAME)
+        if not rows:
+            return jsonify({"error": "Chưa cấu hình WooCommerce"}), 400
+        
+        config = rows[0]
+        publisher = WoocommercePublisher(
+            config.get('site_url'), 
+            config.get('consumer_key'), 
+            config.get('consumer_secret')
+        )
+        res = publisher.get_categories()
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@api_bp.route('/api/v2/woocommerce/analyze', methods=['POST'])
+def woocommerce_analyze():
+    """Phân tích URL sản phẩm bằng AI."""
+    data = request.json
+    url = data.get('url')
+    api_key = data.get('api_key')
+    system_prompt = data.get('system_prompt')
+
+    if not url or not api_key:
+        return jsonify({"error": "Thiếu URL hoặc API Key"}), 400
+
+    try:
+        analyzer = URLAnalyzer(api_key, system_prompt)
+        raw_info = analyzer.scrape_product_info(url)
+        seo_content = analyzer.generate_seo_product(raw_info)
+        return jsonify(seo_content)
+    except Exception as e:
+        error_msg = str(e)
+        status_code = 500
+        if any(code in error_msg for code in ["429", "Too Many Requests", "exhausted"]):
+            status_code = 429
+        elif "503" in error_msg or "Service Unavailable" in error_msg:
+            status_code = 503
+        elif "403" in error_msg or "Permission denied" in error_msg:
+            status_code = 403
+        return jsonify({"error": error_msg}), status_code
+
+@api_bp.route('/api/v2/woocommerce/db', methods=['GET'])
+def woocommerce_db():
+    """Lấy danh sách sản phẩm từ Woocommerce_db."""
+    try:
+        rows = SheetService.get_all_rows(WoocommerceDbModel.SHEET_NAME)
+        return jsonify(rows)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@api_bp.route('/api/v2/woocommerce/import-csv', methods=['POST'])
+def woocommerce_import_csv():
+    """Import sản phẩm từ file CSV."""
+    if 'file' not in request.files:
+        return jsonify({"error": "Không tìm thấy file"}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "File trống"}), 400
+
+    try:
+        stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
+        reader = csv.DictReader(stream)
+        
+        count = 0
+        for row in reader:
+            # Ánh xạ từ CSV sang Model (Giả sử các header CSV khớp hoặc map gần đúng)
+            product = {
+                "title": row.get('title', row.get('Product Name', '')),
+                "regular_price": row.get('regular_price', row.get('Price', '')),
+                "sale_price": row.get('sale_price', ''),
+                "description": row.get('description', ''),
+                "short_description": row.get('short_description', ''),
+                "categories": row.get('categories', ''),
+                "images": row.get('images', ''),
+                "status": "NEW"
+            }
+            SheetService.append_row(WoocommerceDbModel.SHEET_NAME, product)
+            count += 1
+            
+        return jsonify({"success": True, "imported": count})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@api_bp.route('/api/v2/woocommerce/add-item', methods=['POST'])
+def woocommerce_add_item():
+    """Thêm một sản phẩm đơn lẻ vào hàng đợi đăng."""
+    data = request.json
+    try:
+        if not data.get('title'):
+            return jsonify({"error": "Thiếu tiêu đề sản phẩm"}), 400
+        
+        data["status"] = "NEW"
+        SheetService.append_row(WoocommerceDbModel.SHEET_NAME, data)
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

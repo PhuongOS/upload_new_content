@@ -10,3 +10,5 @@ grpcio
 protobuf
 requests
 APScheduler
+WooCommerce
+beautifulsoup4

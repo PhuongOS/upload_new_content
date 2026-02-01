@@ -1,4 +1,5 @@
 import os
+os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1' # Lờ đi cảnh báo scope thay đổi nếu các scope chính vẫn đủ
 import json
 import uuid
 import threading
@@ -12,10 +13,13 @@ from werkzeug.utils import secure_filename
 TOKEN_FILE = 'token.json'  # File lưu trữ token đăng nhập sau khi xác thực thành công
 CREDENTIALS_FILE = 'assect/AouthGoogle.json'  # File cấu hình Client ID/Secret từ Google Console
 SCOPES = [
-    "https://www.googleapis.com/auth/drive",      # Quyền quản lý file trên Drive
-    "https://www.googleapis.com/auth/spreadsheets", # Quyền chỉnh sửa Google Sheets
-    "https://www.googleapis.com/auth/youtube.upload", # Quyền upload video lên YouTube
-    "https://www.googleapis.com/auth/youtube.force-ssl" # Quyền quản lý video (set thumbnail, metadata...)
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.force-ssl"
 ]
 UPLOAD_FOLDER = 'uploads_temp'  # Thư mục tạm để lưu file trước khi đẩy lên Drive
 
@@ -29,7 +33,7 @@ tasks = {}
 def get_creds(interactive=False):
     """
     Hàm xử lý xác thực Google API.
-    :param interactive: Nếu True, sẽ mở trình duyệt để đăng nhập nếu token không hợp lệ.
+    :param interactive: Nếu True, sẽ trả về Credentials hoặc raise lỗi nếu không có.
     """
     creds = None
     if os.path.exists(TOKEN_FILE):
@@ -40,35 +44,78 @@ def get_creds(interactive=False):
             from google.auth.transport.requests import Request
             try:
                 creds.refresh(Request())
+                # Lưu lại token đã refresh
+                with open(TOKEN_FILE, 'w') as token:
+                    token.write(creds.to_json())
+                return creds
             except Exception:
                 # Nếu refresh thất bại, coi như không có creds hợp lệ
-                if not interactive: return None
+                if not interactive:
+                    raise PermissionError("Phiên đăng nhập Google đã hết hạn. Vui lòng đăng nhập lại.")
         
         if not creds or not creds.valid:
             if not interactive:
-                raise PermissionError("Vui lòng đăng nhập lại Google để tiếp tục.")
+                # Bản fix: Raise lỗi thay vì return None để tránh lỗi ADC (Application Default Credentials)
+                raise PermissionError("Chưa kết nối tài khoản Google hoặc phiên làm việc đã hết hạn.")
                 
-            if not os.path.exists(CREDENTIALS_FILE):
-                raise FileNotFoundError(f"Không tìm thấy file credentials tại {CREDENTIALS_FILE}")
+            raise PermissionError("Vui lòng đăng nhập Google để tiếp tục.")
             
-            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
-            try:
-                # Thử mở browser local (chỉ hoạt động trên máy cá nhân)
-                creds = flow.run_local_server(port=8080, host='localhost', open_browser=True)
-            except Exception as e:
-                # Fallback hoặc thông báo lỗi rõ ràng trên server
-                err_msg = (
-                    f"Không thể mở trình duyệt để xác thực (Lỗi: {e}). "
-                    "Nếu bạn đang chạy trên Server/Docker, vui lòng upload file 'token.json' "
-                    "đã xác thực từ máy local lên thư mục gốc của server."
-                )
-                print(f"[Auth Error] {err_msg}")
-                raise RuntimeError(err_msg)
+    return creds
+
+def _is_desktop_creds():
+    """Kiểm tra xem file credentials là loại Desktop hay Web."""
+    try:
+        if not os.path.exists(CREDENTIALS_FILE):
+            return True # Mặc định là Desktop nếu chưa có file
+        with open(CREDENTIALS_FILE, 'r') as f:
+            data = json.load(f)
+            return "installed" in data
+    except:
+        return True
+
+def get_auth_url_main(host_url=None):
+    """Tạo URL xác thực cho tài khoản chính."""
+    if not os.path.exists(CREDENTIALS_FILE):
+        raise FileNotFoundError(f"Không tìm thấy file credentials tại {CREDENTIALS_FILE}")
         
-        # Lưu lại token
-        with open(TOKEN_FILE, 'w') as token:
-            token.write(creds.to_json())
-            
+    is_desktop = _is_desktop_creds()
+    if is_desktop:
+        # Desktop App: Nếu có host_url (truy cập từ web), dùng port thực tế của web.
+        # Nếu không (môi trường khác), fallback về 8080 chuẩn.
+        if host_url and ('localhost' in host_url or '127.0.0.1' in host_url):
+            redirect_uri = f"{host_url.rstrip('/')}/api/auth/callback"
+        else:
+            redirect_uri = 'http://localhost:8080/api/auth/callback'
+    else:
+        # Web App: Luôn dùng domain thực tế
+        redirect_uri = f"{host_url.rstrip('/')}/api/auth/callback" if host_url else 'http://localhost:8080/api/auth/callback'
+
+    flow = InstalledAppFlow.from_client_secrets_file(
+        CREDENTIALS_FILE, 
+        SCOPES,
+        redirect_uri=redirect_uri
+    )
+    
+    auth_url, _ = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true',
+        prompt='consent',
+        state='main'
+    )
+    return auth_url, redirect_uri
+
+def fetch_and_save_token(code, redirect_uri):
+    """Lấy token từ code và lưu lại. redirect_uri phải khớp với lúc gọi auth_url."""
+    flow = InstalledAppFlow.from_client_secrets_file(
+        CREDENTIALS_FILE, 
+        SCOPES,
+        redirect_uri=redirect_uri
+    )
+    flow.fetch_token(code=code)
+    creds = flow.credentials
+    
+    with open(TOKEN_FILE, 'w') as token:
+        token.write(creds.to_json())
     return creds
 
 def background_upload(task_id, form_data, files_data):

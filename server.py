@@ -1,4 +1,5 @@
 import os
+import logging
 from flask import Flask, send_from_directory
 from flasgger import Swagger
 from routes import api_bp
@@ -13,12 +14,24 @@ swagger = Swagger(app)
 
 # --- SCHEDULER SETUP ---
 def run_schedule_check():
+    """
+    Kiểm tra trạng thái bài đăng định kỳ.
+    Bọc trong try-except để không làm treo server và tránh spam log.
+    """
     with app.app_context():
-        manager = PostManager()
-        manager.check_status_recur()
+        try:
+            manager = PostManager()
+            manager.check_status_recur()
+        except PermissionError as pe:
+            # Lỗi xác thực (Google Auth) - Log cảnh báo thay vì in error full stack
+            logging.warning(f"[Scheduler Auth] {pe}")
+        except Exception as e:
+            # Các lỗi khác
+            logging.error(f"[Scheduler Error] {type(e).__name__}: {str(e)}")
 
 scheduler = BackgroundScheduler()
-scheduler.add_job(func=run_schedule_check, trigger="interval", minutes=5)
+# Chạy mỗi 10 phút thay vì 5 phút để giảm tải nếu có lỗi meta-data spam
+scheduler.add_job(func=run_schedule_check, trigger="interval", minutes=10)
 scheduler.start()
 
 # Đăng ký tập hợp các API từ file routes.py

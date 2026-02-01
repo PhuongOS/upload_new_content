@@ -8,6 +8,8 @@ from .youtube_publisher import YoutubePublisher
 from services.sheet_service import SheetService
 from services.account_service import AccountService
 from logic import get_creds, tasks
+from .woocommerce_publisher import WoocommercePublisher
+from models.Woocommerce_Config import WoocommerceConfModel
 
 class PostManager:
     """
@@ -179,6 +181,8 @@ class PostManager:
                 return self._handle_facebook_publish(item, sheet_name, index, task_id, scheduled_time=scheduled_unix)
             elif "Youtube" in sheet_name:
                 return self._handle_youtube_publish(item, sheet_name, index, task_id, scheduled_time=scheduled_iso)
+            elif "Woocommerce" in sheet_name:
+                return self._handle_woocommerce_publish(item, sheet_name, index, task_id)
                 
             return {"success": False, "error": "Nền tảng không được hỗ trợ."}
         except Exception as e:
@@ -967,3 +971,95 @@ class PostManager:
                 
         except Exception as e:
             print(f"[Scheduler] ❌ Lỗi quá trình kiểm tra: {e}")
+    def _handle_woocommerce_publish(self, item, sheet_name, index, task_id=None):
+        """Xử lý đăng sản phẩm lên WooCommerce với cơ chế báo cáo lỗi thông minh."""
+        def update_task_msg(msg):
+            if task_id and task_id in tasks:
+                tasks[task_id]["message"] = msg
+                print(f"[WC-Publish] {msg}")
+
+        try:
+            update_task_msg("Đang chuẩn bị kết nối WooCommerce...")
+            # 1. Lấy cấu hình WC
+            conf_rows = SheetService.get_all_rows(WoocommerceConfModel.SHEET_NAME)
+            if not conf_rows:
+                return {"success": False, "error": "Chưa cấu hình WooCommerce (Woocommerce_Config)."}
+            
+            conf = conf_rows[0]
+            publisher = WoocommercePublisher(
+                conf['site_url'], 
+                conf['consumer_key'], 
+                conf['consumer_secret']
+            )
+
+            # 2. Xử lý dữ liệu sản phẩm
+            product_data = {
+                "name": item.get('title', 'Sản phẩm mới'),
+                "type": "simple",
+                "regular_price": str(item.get('regular_price', '')).replace(',', '').strip(),
+                "sale_price": str(item.get('sale_price', '')).replace(',', '').strip(),
+                "description": item.get('description', ''),
+                "short_description": item.get('short_description', ''),
+                "status": "publish" # Mặc định đăng public ngay
+            }
+            
+            # Xóa sale_price nếu trống hoặc không hợp lệ để tránh lỗi API
+            if not product_data["sale_price"]:
+                del product_data["sale_price"]
+
+            # Xử lý categories
+            cat_ids = item.get('categories', '')
+            if cat_ids:
+                ids = [c.strip() for c in str(cat_ids).split(',') if c.strip().isdigit()]
+                if ids:
+                    product_data["categories"] = [{"id": int(i)} for i in ids]
+
+            # Xử lý images (Hỗ trợ cả dấu phẩy, xuống dòng, dấu chấm phẩy)
+            img_urls = item.get('images', '')
+            if img_urls:
+                import re
+                # Tách theo các loại dấu phân cách phổ biến
+                urls = [u.strip() for u in re.split(r'[\n,\t;]', str(img_urls)) if u.strip().startswith('http')]
+                if urls:
+                    product_data["images"] = [{"src": u} for u in urls]
+                    print(f"[WC-Publish] Image URLs detected: {len(urls)} images")
+                else:
+                    print(f"[WC-Publish] No valid http URLs found in images field: {img_urls}")
+            else:
+                print("[WC-Publish] No images found in item data.")
+
+            update_task_msg(f"Đang gửi yêu cầu tạo sản phẩm: {product_data['name']}...")
+            res = publisher.create_product(product_data)
+
+            if res.get("success"):
+                wc_data = res["data"]
+                wc_id = wc_data.get('id')
+                wc_link = wc_data.get('permalink')
+                print(f"[PostManager] ✅ WooCommerce Post Success: {wc_id}")
+                
+                # 3. Cập nhật Sheet - Bọc trong try-except riêng để ko làm mất trạng thái thành công của Post
+                try:
+                    update_task_msg("Đăng thành công! Đang lưu thông tin vào Google Sheets...")
+                    item["status"] = "SUCCESS"
+                    item["wc_id"] = wc_id
+                    item["wc_link"] = wc_link
+                    item["completion_time"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                    
+                    SheetService.update_row(sheet_name, index, item)
+                    return {"success": True, "data": wc_data}
+                except Exception as sheet_err:
+                    print(f"[PostManager] ⚠️ Post OK ({wc_id}) nhưng lỗi cập nhật Sheet: {sheet_err}")
+                    # Vẫn trả về success nhưng có kèm warning log
+                    return {
+                        "success": True, 
+                        "data": wc_data, 
+                        "warning": f"Đã đăng sản phẩm (ID: {wc_id}) nhưng không thể cập nhật Google Sheets: {str(sheet_err)}"
+                    }
+            else:
+                error_detail = res.get("error", "Unknown WC API Error")
+                print(f"[PostManager] ❌ WooCommerce API Error: {error_detail}")
+                return {"success": False, "error": f"Lỗi từ WooCommerce: {error_detail}"}
+
+        except Exception as e:
+            print(f"[PostManager] ❌ Exception in _handle_woocommerce_publish: {e}")
+            return {"success": False, "error": f"Lỗi hệ thống khi đăng bài: {str(e)}"}

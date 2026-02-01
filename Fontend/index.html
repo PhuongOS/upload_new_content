@@ -43,6 +43,10 @@
                         <i class="fas fa-calendar-alt"></i>
                         <span>Media Calendar</span>
                     </li>
+                    <li class="nav-item" data-target="woocommerce-view">
+                        <i class="fas fa-shopping-cart"></i>
+                        <span>WooCommerce</span>
+                    </li>
                     <li class="nav-item" data-target="history-view">
                         <i class="fas fa-history"></i>
                         <span>Bài đã đăng</span>
@@ -238,6 +242,11 @@
                                     <textarea id="ytGeminiSystemPrompt" rows="2"
                                         placeholder="Định hướng cho AI viết bài Youtube..."></textarea>
                                 </div>
+                                <div class="input-group">
+                                    <label><i class="fas fa-shopping-bag"></i> WooCommerce System Prompt AI</label>
+                                    <textarea id="wooGeminiSystemPrompt" rows="2"
+                                        placeholder="Định hướng cho AI viết bài WooCommerce..."></textarea>
+                                </div>
                                 <button class="btn btn-primary" onclick="saveConfig()">Lưu cấu hình hệ thống</button>
                             </div>
                         </div>
@@ -352,8 +361,110 @@
                         <!-- History Cards will be rendered here -->
                     </div>
                 </section>
+                <!-- VIEW: WooCommerce Management -->
+                <section id="woocommerce-view" class="view">
+                    <div class="glass-card">
+                        <div class="section-header">
+                            <i class="fas fa-shopping-bag"></i>
+                            <h3>Quản lý WooCommerce</h3>
+                            <div class="header-actions">
+                                <button class="btn btn-secondary" onclick="openWooConfig()">
+                                    <i class="fas fa-cog"></i> Cấu hình
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="woo-dashboard-grid">
+                            <!-- Tool AI Analyzer -->
+                            <div class="sub-card">
+                                <h4><i class="fas fa-magic"></i> AI URL Analyze</h4>
+                                <p class="sub-text">Cào thông tin từ link web khác và viết lại SEO.</p>
+                                <div class="input-group">
+                                    <input type="text" id="wooAnalyzeUrl"
+                                        placeholder="Nhập URL sản phẩm tham khảo..." />
+                                </div>
+                                <button class="btn btn-primary btn-full" onclick="analyzeWooUrl()">
+                                    <i class="fas fa-search"></i> Phân tích ngay
+                                </button>
+                            </div>
+
+                            <!-- Bulk CSV Upload -->
+                            <div class="sub-card">
+                                <h4><i class="fas fa-file-csv"></i> Bulk Upload</h4>
+                                <p class="sub-text">Đăng hàng loạt sản phẩm từ file CSV.</p>
+                                <div class="file-drop-area mini"
+                                    onclick="document.getElementById('wooCsvFile').click()">
+                                    <i class="fas fa-upload"></i>
+                                    <span>Chọn file CSV</span>
+                                    <input type="file" id="wooCsvFile" accept=".csv" hidden
+                                        onchange="handleWooCsv(event)" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="section-divider"></div>
+
+                        <div class="section-header">
+                            <i class="fas fa-list-ul"></i>
+                            <h4>Danh sách sản phẩm chờ đăng</h4>
+                            <div class="header-actions">
+                                <button class="btn btn-icon" onclick="loadWooDb()"><i
+                                        class="fas fa-sync-alt"></i></button>
+                            </div>
+                        </div>
+
+                        <div class="table-container">
+                            <table class="modern-table">
+                                <thead>
+                                    <tr>
+                                        <th>STT</th>
+                                        <th>Sản phẩm</th>
+                                        <th>Giá</th>
+                                        <th>Danh mục</th>
+                                        <th>Trạng thái</th>
+                                        <th>Hành động</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="wooDbBody">
+                                    <!-- Dynamic rows -->
+                                    <tr>
+                                        <td colspan="6" style="text-align:center">Đang tải dữ liệu...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
             </div>
         </main>
+    </div>
+
+    <!-- Modal: WooCommerce Configuration -->
+    <div id="wooConfigModal" class="modal-overlay">
+        <div class="modal-content glass-card">
+            <div class="modal-header">
+                <h3><i class="fas fa-cog"></i> Cấu hình WooCommerce</h3>
+                <span class="close-modal" onclick="closeWooConfig()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="input-group">
+                    <label>WooCommerce URL:</label>
+                    <input type="text" id="wc_url" placeholder="https://yourstore.com" />
+                </div>
+                <div class="input-group">
+                    <label>Consumer Key:</label>
+                    <input type="text" id="wc_key" placeholder="ck_..." />
+                </div>
+                <div class="input-group">
+                    <label>Consumer Secret:</label>
+                    <input type="text" id="wc_secret" placeholder="cs_..." />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeWooConfig()">Hủy</button>
+                <button class="btn btn-primary" onclick="saveWooConfig()">Lưu cấu hình</button>
+            </div>
+        </div>
     </div>
 
     <!-- Confirm Delete Modal -->

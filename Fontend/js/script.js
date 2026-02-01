@@ -17,6 +17,7 @@ const statusMessage = document.getElementById('statusMessage');
 const geminiApiKeyInput = document.getElementById('geminiApiKey');
 const fbGeminiSystemPromptInput = document.getElementById('fbGeminiSystemPrompt');
 const ytGeminiSystemPromptInput = document.getElementById('ytGeminiSystemPrompt');
+const wooGeminiSystemPromptInput = document.getElementById('wooGeminiSystemPrompt');
 const viewTitle = document.getElementById('view-title');
 
 // Edit state for configurations
@@ -27,7 +28,7 @@ let currentConfigSheet = null;
 let currentCalendarData = [];
 let currentFacebookData = [];
 let currentYoutubeData = [];
-// Removed duplicate currentYoutubeData
+let currentWooData = [];
 let activeScheduleTarget = { index: null, platform: null };
 
 // Filter State
@@ -68,6 +69,7 @@ navItems.forEach(item => {
         if (target === 'facebook-view') loadSheetData('Facebook_db');
         if (target === 'youtube-view') loadSheetData('Youtube_db');
         if (target === 'calendar-view') loadSheetData('Media_Calendar');
+        if (target === 'woocommerce-view') loadWooDb();
     });
 });
 
@@ -78,6 +80,13 @@ window.onload = () => {
     geminiApiKeyInput.value = localStorage.getItem('geminiApiKey') || "";
     fbGeminiSystemPromptInput.value = localStorage.getItem('fbGeminiSystemPrompt') || "Bạn là một người sáng tạo nội dung Facebook chuyên nghiệp. Hãy viết Hook ngắn gọn, thu hút, kèm icon và hashtag phù hợp.";
     ytGeminiSystemPromptInput.value = localStorage.getItem('ytGeminiSystemPrompt') || "Bạn là một người sáng tạo nội dung Youtube chuyên nghiệp. Hãy viết đoạn giới thiệu video hấp dẫn, tối ưu SEO và lôi cuốn người xem.";
+    wooGeminiSystemPromptInput.value = localStorage.getItem('wooGeminiSystemPrompt') || "Bạn là một chuyên gia SEO WooCommerce. Hãy viết mô tả sản phẩm hấp dẫn, chuẩn SEO, bao gồm các thẻ HTML H2, H3, và các đoạn bullet points nổi bật tính năng.";
+
+    // WooCommerce Specific Setup
+    const wooSystemPrompt = "Bạn là một chuyên gia SEO WooCommerce. Hãy viết mô tả sản phẩm hấp dẫn, chuẩn SEO, bao gồm các thẻ HTML H2, H3, và các đoạn bullet points nổi bật tính năng.";
+    if (!localStorage.getItem('wooGeminiSystemPrompt')) {
+        localStorage.setItem('wooGeminiSystemPrompt', wooSystemPrompt);
+    }
 
     // Check Auth Status with Backend
     checkBackendAuth();
@@ -155,6 +164,7 @@ function saveConfig() {
     localStorage.setItem('geminiApiKey', geminiApiKeyInput.value.trim());
     localStorage.setItem('fbGeminiSystemPrompt', fbGeminiSystemPromptInput.value.trim());
     localStorage.setItem('ytGeminiSystemPrompt', ytGeminiSystemPromptInput.value.trim());
+    localStorage.setItem('wooGeminiSystemPrompt', wooGeminiSystemPromptInput.value.trim());
     alert('Cấu hình đã được lưu!');
 }
 
@@ -228,9 +238,13 @@ async function addGoogleAccount() {
 }
 
 async function removeGoogleAccount(accountId) {
-    if (!confirm('Bạn có chắc muốn xóa tài khoản này? Các kênh YouTube liên kết sẽ không thể đăng bài được nữa.')) {
-        return;
-    }
+    const confirmed = await showConfirmModal({
+        title: "Xóa tài khoản?",
+        message: "Bạn có chắc muốn xóa tài khoản này? Các kênh YouTube liên kết sẽ không thể đăng bài được nữa.",
+        type: "danger",
+        okText: "Xóa ngay"
+    });
+    if (!confirmed) return;
 
     try {
         const res = await fetch(`/api/auth/accounts/${accountId}`, { method: 'DELETE' });
@@ -248,6 +262,13 @@ async function removeGoogleAccount(accountId) {
 }
 
 async function refreshAccountChannels(accountId) {
+    const confirmed = await showConfirmModal({
+        title: "Cập nhật kênh?",
+        message: "Hệ thống sẽ đồng bộ lại danh sách kênh từ Google và cập nhật Sheet Youtube_Config.",
+        type: "primary",
+        okText: "Cập nhật"
+    });
+    if (!confirmed) return;
     try {
         const res = await fetch(`/api/auth/accounts/${accountId}/channels`);
         const data = await res.json();
@@ -846,6 +867,7 @@ function showConfirmModal(options) {
     titleEl.innerText = title;
     okBtn.innerText = okText;
     cancelBtn.innerText = cancelText;
+    cancelBtn.style.display = cancelText ? 'inline-block' : 'none';
 
     // Cập nhật giao diện theo type
     modal.className = `modal-overlay modal-${type}`;
@@ -884,8 +906,58 @@ function showConfirmModal(options) {
     });
 }
 
-authBtn.onclick = () => {
-    window.location.href = '/api/auth/login';
+function showSuccessModal(title, message) {
+    return showConfirmModal({
+        title,
+        message,
+        type: 'success',
+        okText: 'OK',
+        cancelText: ''
+    });
+}
+
+function showErrorModal(title, message) {
+    return showConfirmModal({
+        title,
+        message,
+        type: 'danger',
+        okText: 'Đóng',
+        cancelText: ''
+    });
+}
+
+authBtn.onclick = async () => {
+    try {
+        authBtn.disabled = true;
+        authBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Đang kết nối...';
+
+        // Gọi API login với format=json để kiểm tra xem có cần manual auth không
+        const res = await fetch('/api/auth/login?format=json');
+        const data = await res.json();
+
+        if (data.needs_manual_auth) {
+            const confirmed = await showConfirmModal({
+                title: "Yêu cầu xác thực thủ công",
+                message: "Server không thể tự mở trình duyệt (Docker/Remote). Hệ thống sẽ mở một tab mới để bạn đăng nhập Google.\n\nSau khi xong, hãy quay lại đây.",
+                type: "primary",
+                okText: "Mở trang xác thực",
+                cancelText: "Đóng"
+            });
+            if (confirmed) {
+                window.open(data.auth_url, '_blank');
+            }
+        } else {
+            // Local mode: redirect trực tiếp
+            window.location.href = '/api/auth/login';
+        }
+    } catch (err) {
+        console.error("Auth error:", err);
+        // Fallback: redirect trực tiếp nếu fetch lỗi
+        window.location.href = '/api/auth/login';
+    } finally {
+        authBtn.disabled = false;
+        authBtn.innerHTML = '<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="18" height="18" alt="Google"> <span>Kết nối Google</span>';
+    }
 };
 
 function addProgressItem(text) {
@@ -1099,54 +1171,43 @@ async function generateAiHook() {
     const systemPrompt = sheetName === 'Facebook_db' ? fbGeminiSystemPromptInput.value.trim() : ytGeminiSystemPromptInput.value.trim();
     const userPrompt = `Hãy viết một đoạn Hook ngắn gọn (khoảng 2-3 câu) để mô tả cho video có tên: "${videoName}". ${item.hook ? 'Tham khảo nội dung hiện tại: ' + item.hook : ''}`;
 
-    let success = false;
-    let lastError = "";
+    aiBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Đang suy nghĩ...`;
 
-    for (let i = 0; i < apiKeys.length; i++) {
-        const apiKey = apiKeys[i];
-        aiBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Thử Key #${i + 1}...`;
+    try {
+        const res = await fetch('/api/v2/ai/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                api_key: rawKeys, // Gửi toàn bộ chuỗi (Có thể chứa nhiều key)
+                system_prompt: systemPrompt,
+                user_prompt: userPrompt
+            })
+        });
 
-        try {
-            const res = await fetch('/api/v2/ai/generate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    api_key: apiKey,
-                    system_prompt: systemPrompt,
-                    user_prompt: userPrompt
-                })
-            });
+        const data = await res.json();
 
-            const data = await res.json();
-
-            if (res.ok) {
-                hookInput.value = data.result;
-                success = true;
-                break;
+        if (res.ok) {
+            hookInput.value = data.result;
+        } else {
+            // Xử lý thông báo lỗi dựa trên mã lỗi backend trả về
+            let errMsg = data.error || "Không thể tạo nội dung.";
+            if (res.status === 429) {
+                showErrorModal("Hết hạn mức (429)", "Tất cả API Key bạn cung cấp đều đã hết hạn mức sử dụng (Quota Exceeded). Vui lòng thử lại sau hoặc thêm key mới.");
+            } else if (res.status === 503) {
+                showErrorModal("Server Bận (503)", "Dịch vụ Gemini đang quá tải. Vui lòng thử lại sau giây lát.");
+            } else if (res.status === 403) {
+                showErrorModal("Lỗi phân quyền (403)", "API Key không hợp lệ hoặc không có quyền truy cập model này.");
             } else {
-                if (res.status === 429 || (data.error && data.error.includes("429"))) {
-                    console.warn(`Key #${i + 1} bị giới hạn (429). Đang chuyển sang key tiếp theo...`);
-                    lastError = "Tất cả API Key đều bị giới hạn (429).";
-                    continue;
-                } else {
-                    alert(`Lỗi AI (Key #${i + 1}): ` + data.error);
-                    lastError = data.error;
-                    break;
-                }
+                showErrorModal("Lỗi AI", errMsg);
             }
-        } catch (err) {
-            console.error(err);
-            lastError = "Lỗi kết nối server.";
-            continue;
         }
+    } catch (err) {
+        console.error("AI Error:", err);
+        showErrorModal("Lỗi kết nối", "Không thể kết nối tới server AI: " + err.message);
+    } finally {
+        aiBtn.disabled = false;
+        aiBtn.innerHTML = originalText;
     }
-
-    if (!success && lastError) {
-        alert("Không thể tạo nội dung: " + lastError);
-    }
-
-    aiBtn.disabled = false;
-    aiBtn.innerHTML = originalText;
 }
 // CONFIG VIEW LOGIC
 const configTabBtns = document.querySelectorAll('.config-tab-btn');
@@ -1403,7 +1464,7 @@ function startTaskPolling(taskId, btn, originalHtml, sheetName) {
             if (!task) return;
 
             if (task.status === 'processing') {
-                btn.innerHTML = '<i class="fas fa-sync fa-spin"></i>';
+                if (btn) btn.innerHTML = '<i class="fas fa-sync fa-spin"></i>';
                 // Cập nhật progress item nếu có log message mới và khác message cũ
                 if (task.message && task.message !== lastMessage) {
                     addProgressItem(`🔄 [Post] ${task.message}`);
@@ -1411,18 +1472,24 @@ function startTaskPolling(taskId, btn, originalHtml, sheetName) {
                 }
             } else if (task.status === 'success') {
                 clearInterval(interval);
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-check-circle" style="color: #10b981;"></i>';
-                addProgressItem(`✅ [Post] Đăng thành công! (ID: ${task.result?.post_id || 'N/A'})`);
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-check-circle" style="color: #10b981;"></i>';
+                }
+                addProgressItem(`✅ [Post] Đăng thành công! (ID: ${task.result?.post_id || task.result?.data?.id || 'N/A'})`);
                 alert('🚀 Bài viết đã được đăng thành công!');
-                loadSheetData(sheetName);
+
+                if (sheetName === 'Woocommerce_db') loadWooDb();
+                else loadSheetData(sheetName);
 
                 // Reset icon sau 3 giây
-                setTimeout(() => { btn.innerHTML = originalHtml; }, 3000);
+                if (btn) setTimeout(() => { btn.innerHTML = originalHtml; }, 3000);
             } else if (task.status === 'error') {
                 clearInterval(interval);
-                btn.disabled = false;
-                btn.innerHTML = originalHtml;
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = originalHtml;
+                }
                 addProgressItem(`❌ [Post] Lỗi: ${task.message}`);
                 alert('❌ Lỗi khi đăng bài: ' + task.message);
             }
@@ -1696,6 +1763,246 @@ async function deleteHistoryRow(index) {
     } catch (e) {
         alert('Lỗi hệ thống.');
     }
+}
+
+// --- WOOCOMMERCE FUNCTIONS ---
+
+async function loadWooDb() {
+    const tbody = document.getElementById('wooDbBody');
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center"><i class="fas fa-spinner fa-spin"></i> Đang tải dữ liệu...</td></tr>';
+
+    try {
+        const res = await fetch('/api/v2/woocommerce/db');
+        const data = await res.json();
+        currentWooData = data;
+        renderWooDb(data);
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color: var(--danger)">Lỗi: ${err.message}</td></tr>`;
+    }
+}
+
+function renderWooDb(data) {
+    const tbody = document.getElementById('wooDbBody');
+    if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center">Chưa có sản phẩm nào.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = data.map((item, index) => {
+        let statusClass = 'status-new';
+        if (item.status === 'SUCCESS') statusClass = 'status-success';
+        if (item.status === 'ERROR') statusClass = 'status-danger';
+
+        return `
+            <tr>
+                <td>${index + 1}</td>
+                <td>
+                    <div style="font-weight: 500">${item.title}</div>
+                    <div style="font-size: 11px; color: var(--text-muted)">${item.wc_id ? 'ID: ' + item.wc_id : 'Source: ' + (item.source_url || 'N/A')}</div>
+                </td>
+                <td>${item.regular_price}${item.sale_price ? ' <del style="font-size:11px">' + item.sale_price + '</del>' : ''}</td>
+                <td>${item.categories || 'N/A'}</td>
+                <td><span class="status-badge ${statusClass}">${item.status || 'NEW'}</span></td>
+                <td>
+                    <div class="action-buttons">
+                        ${item.status !== 'SUCCESS' ? `<button class="btn btn-sm btn-primary" onclick="postWooItem(${index})"><i class="fas fa-paper-plane"></i></button>` : ''}
+                        ${item.wc_link ? `<a href="${item.wc_link}" target="_blank" class="btn btn-sm btn-secondary"><i class="fas fa-external-link-alt"></i></a>` : ''}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+async function postWooItem(index) {
+    if (!await showConfirmModal("Đăng sản phẩm lên WooCommerce?", "Bạn có chắc chắn muốn đăng sản phẩm này ngay bây giờ?")) return;
+
+    try {
+        showSuccessModal("Đang xử lý...", "Đang kết nối và đăng sản phẩm lên WooCommerce. Vui lòng đợi.");
+        const res = await fetch('/api/v2/post/publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sheet_name: 'Woocommerce_db', index: index })
+        });
+        const result = await res.json();
+
+        if (result.task_id) {
+            // Sử dụng logic polling giống publishPost
+            addProgressItem(`🕒 [Task] Đang đăng WooCommerce (ID: ${result.task_id.substring(0, 8)}...)`);
+
+            // Tìm nút nếu có thể, hoặc truyền null
+            startTaskPolling(result.task_id, null, "", "Woocommerce_db");
+
+            // Thông báo bắt đầu thành công
+            showSuccessModal("Đã bắt đầu!", "Yêu cầu đăng sản phẩm đã được gửi. Bạn có thể theo dõi tiến độ ở góc phải màn hình.");
+        } else if (result.success) {
+            // Fallback nếu server trả về success đồng bộ
+            showSuccessModal("Thành công!", "Sản phẩm đã được đăng lên WooCommerce.");
+            loadWooDb();
+        } else {
+            showErrorModal("Lỗi đăng bài", result.error || "Không rõ nguyên nhân.");
+        }
+    } catch (err) {
+        showErrorModal("Lỗi kết nối", err.message);
+    }
+}
+
+// Config Modal
+function openWooConfig() {
+    console.log("Opening WooCommerce Config Modal...");
+    const modal = document.getElementById('wooConfigModal');
+    if (modal) {
+        modal.classList.add('visible');
+        loadWooConfig();
+    } else {
+        console.error("Critical: #wooConfigModal element not found!");
+    }
+}
+
+function closeWooConfig() {
+    document.getElementById('wooConfigModal').classList.remove('visible');
+}
+
+async function loadWooConfig() {
+    try {
+        const res = await fetch('/api/v2/woocommerce/config');
+        const config = await res.json();
+        document.getElementById('wc_url').value = config.site_url || "";
+        document.getElementById('wc_key').value = config.consumer_key || "";
+        document.getElementById('wc_secret').value = config.consumer_secret || "";
+    } catch (err) {
+        console.error("Lỗi load config WC:", err);
+    }
+}
+
+async function saveWooConfig() {
+    const data = {
+        site_url: document.getElementById('wc_url').value.trim(),
+        consumer_key: document.getElementById('wc_key').value.trim(),
+        consumer_secret: document.getElementById('wc_secret').value.trim()
+    };
+
+    try {
+        const res = await fetch('/api/v2/woocommerce/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        if (result.success) {
+            showSuccessModal("Lưu thành công", "Cấu hình WooCommerce đã được cập nhật.");
+            closeWooConfig();
+        } else {
+            showErrorModal("Lỗi lưu cấu hình", result.error);
+        }
+    } catch (err) {
+        showErrorModal("Lỗi kết nối", err.message);
+    }
+}
+
+// Analyze Tool
+async function analyzeWooUrl() {
+    const urlInput = document.getElementById('wooAnalyzeUrl');
+    const url = urlInput.value.trim();
+    const apiKey = localStorage.getItem('geminiApiKey');
+    const systemPrompt = localStorage.getItem('wooGeminiSystemPrompt');
+
+    if (!url) return showErrorModal("Thiếu thông tin", "Vui lòng nhập URL sản phẩm.");
+    if (!apiKey) return showErrorModal("Thiếu API Key", "Vui lòng cấu hình Gemini API Key trong phần Cấu hình chung.");
+
+    const analyzeBtn = document.querySelector('button[onclick="analyzeWooUrl()"]');
+    const originalBtnHtml = analyzeBtn.innerHTML;
+
+    try {
+        analyzeBtn.disabled = true;
+        analyzeBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Đang phân tích...';
+
+        showSuccessModal("Đang phân tích...", "AI đang cào dữ liệu và viết lại nội dung chuẩn SEO. Có thể mất 15-45 giây.");
+
+        const res = await fetch('/api/v2/woocommerce/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                url: url,
+                api_key: apiKey.trim(),
+                system_prompt: systemPrompt
+            })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok || data.error) {
+            showErrorModal("Lỗi phân tích", data.error || "Không thể phân tích URL này.");
+            return;
+        }
+
+        // Hiển thị kết quả AI và hỏi có muốn thêm vào DB không
+        const imagesHtml = (data.images || "").split(',')
+            .filter(u => u.trim())
+            .map(u => `<img src="${u.trim()}" style="width: 80px; height: 80px; object-fit: cover; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1)">`)
+            .join('');
+
+        const previewHtml = `
+            <div style="text-align: left; background: rgba(0,0,0,0.2); padding: 15px; border-radius: 12px; font-size: 13px; color: #e0e0e0; line-height: 1.6">
+                <div style="margin-bottom: 10px; font-weight: 600; color: var(--accent); font-size: 14px">${data.title}</div>
+                <div style="margin-bottom: 10px; display: flex; gap: 8px; flex-wrap: wrap">${imagesHtml}</div>
+                <div style="margin-bottom: 5px"><b>Giá:</b> ${data.regular_price} ${data.sale_price ? `<del style="opacity: 0.5; margin-left: 5px">${data.sale_price}</del>` : ''}</div>
+                <div style="margin-bottom: 5px"><b>Danh mục:</b> ${data.categories || 'Tự động'}</div>
+                <div style="opacity: 0.8; font-style: italic">${data.short_description}</div>
+            </div>
+        `;
+
+        if (await showConfirmModal("Kết quả AI Phân tích", previewHtml + "<br>Bạn có muốn thêm sản phẩm này vào hàng đợi đăng bài không?")) {
+            const addRes = await fetch('/api/v2/woocommerce/add-item', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...data, source_url: url })
+            });
+
+            if (addRes.ok) {
+                showSuccessModal("Hoàn tất", "Sản phẩm đã được thêm vào Woocommerce_db.");
+                urlInput.value = ''; // Clear input
+                loadWooDb();
+            } else {
+                const addErr = await addRes.json();
+                showErrorModal("Lỗi thêm sản phẩm", addErr.error);
+            }
+        }
+    } catch (err) {
+        console.error("Analyze Error:", err);
+        showErrorModal("Lỗi kết nối", "Không thể kết nối tới server: " + err.message);
+    } finally {
+        analyzeBtn.disabled = false;
+        analyzeBtn.innerHTML = originalBtnHtml;
+    }
+}
+
+// CSV Upload
+async function handleWooCsv(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        showSuccessModal("Đang xử lý CSV...", "Hệ thống đang import dữ liệu vào Google Sheets.");
+        const res = await fetch('/api/v2/woocommerce/import-csv', {
+            method: 'POST',
+            body: formData
+        });
+        const result = await res.json();
+        if (result.success) {
+            showSuccessModal("Thành công!", `Đã import ${result.imported} sản phẩm từ file CSV.`);
+            loadWooDb();
+        } else {
+            showErrorModal("Lỗi Import", result.error);
+        }
+    } catch (err) {
+        showErrorModal("Lỗi kết nối", err.message);
+    }
+    // Reset input
+    event.target.value = '';
 }
 
 // --- HELPER WRAPPER ---
