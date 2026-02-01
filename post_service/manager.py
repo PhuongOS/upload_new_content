@@ -1020,15 +1020,32 @@ class PostManager:
                 import re
                 # Tách theo các loại dấu phân cách phổ biến
                 urls = [u.strip() for u in re.split(r'[\n,\t;]', str(img_urls)) if u.strip().startswith('http')]
-                if urls:
-                    product_data["images"] = [{"src": u} for u in urls]
-                    print(f"[WC-Publish] Image URLs detected: {len(urls)} images")
+                
+                # Safety fix: Đảm bảo link Drive có đuôi file cho WordPress nhận diện
+                sanitized_urls = []
+                for u in urls:
+                    if 'drive.google.com' in u:
+                        import re as regex
+                        # Trích xuất file_id từ link Drive
+                        fid_match = regex.search(r'id=([a-zA-Z0-9_-]+)', u) or regex.search(r'/d/([a-zA-Z0-9_-]+)', u)
+                        if fid_match:
+                            file_id = fid_match.group(1)
+                            # Chuyển sang format lh3 siêu sạch cho WordPress
+                            u = f"https://lh3.googleusercontent.com/d/{file_id}#.jpg"
+                    sanitized_urls.append(u)
+
+                if sanitized_urls:
+                    product_data["images"] = [{"src": u} for u in sanitized_urls]
+                    print(f"[WC-Publish] Image URLs detected: {len(sanitized_urls)} images")
+                    for idx, img_obj in enumerate(product_data["images"]):
+                        print(f"[WC-Publish] Image #{idx+1}: {img_obj['src']}")
                 else:
                     print(f"[WC-Publish] No valid http URLs found in images field: {img_urls}")
             else:
                 print("[WC-Publish] No images found in item data.")
 
             update_task_msg(f"Đang gửi yêu cầu tạo sản phẩm: {product_data['name']}...")
+            print(f"[WC-Publish] Final product_data['images']: {product_data.get('images')}")
             res = publisher.create_product(product_data)
 
             if res.get("success"):

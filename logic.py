@@ -243,6 +243,72 @@ def background_upload(task_id, form_data, files_data):
         print(f"Lỗi Tác vụ ngầm: {e}")
         tasks[task_id] = {"status": "error", "progress": "Thất bại", "message": str(e)}
 
+def convert_drive_link_to_direct(link):
+    """
+    Chuyển đổi link Google Drive từ dạng /view sang dạng trực tiếp (uc?id=...)
+    để có thể nhúng vào thẻ <img>
+    """
+    if 'drive.google.com' not in link:
+        return link
+    
+    file_id = ""
+    if 'id=' in link:
+        file_id = link.split('id=')[-1].split('&')[0]
+    elif '/d/' in link:
+        file_id = link.split('/d/')[-1].split('/')[0]
+    
+    if file_id:
+        # Use lh3.googleusercontent.com for a more "standard" looking image URL
+        # and append #.jpg fragment to trick WordPress's extension check
+        return f"https://lh3.googleusercontent.com/d/{file_id}#.jpg"
+    return link
+
+def upload_product_images_to_drive(folder_name, files_data, parent_id="root"):
+    """
+    Upload danh sách ảnh sản phẩm lên Drive và trả về danh sách Direct Links.
+    files_data: List of dicts {'filename':..., 'content':..., 'content_type':...}
+    """
+    try:
+        creds = get_creds()
+        drive_service = build('drive', 'v3', credentials=creds)
+        
+        def create_folder(name, pid):
+            pid = pid or "root"
+            meta = {'name': name, 'mimeType': 'application/vnd.google-apps.folder', 'parents': [pid]}
+            f = drive_service.files().create(body=meta, fields='id').execute()
+            return f.get('id')
+
+        # Tạo thư mục chính cho sản phẩm
+        product_folder_id = create_folder(folder_name, parent_id)
+        
+        direct_links = []
+        for f in files_data:
+            # Lưu tạm
+            temp_name = f"temp_{uuid.uuid4()}_{secure_filename(f['filename'])}"
+            filepath = os.path.join(UPLOAD_FOLDER, temp_name)
+            with open(filepath, 'wb') as tmp:
+                tmp.write(f['content'])
+            
+            meta = {'name': f['filename'], 'parents': [product_folder_id]}
+            media = MediaFileUpload(filepath, mimetype=f['content_type'], resumable=True)
+            drive_file = drive_service.files().create(body=meta, media_body=media, fields='id,webViewLink').execute()
+            
+            # Cấp quyền xem cho bất kỳ ai có link (Public)
+            drive_service.permissions().create(
+                fileId=drive_file.get('id'),
+                body={'type': 'anyone', 'role': 'reader'}
+            ).execute()
+            
+            os.remove(filepath)
+            
+            direct_url = convert_drive_link_to_direct(drive_file.get('webViewLink'))
+            direct_links.append(direct_url)
+            
+        return direct_links
+    except Exception as e:
+        print(f"[Drive-Upload] Lỗi: {e}")
+        return []
+
 def delete_drive_file(file_id):
     """Xóa hoàn toàn một file hoặc thư mục trên Google Drive"""
     if not file_id:

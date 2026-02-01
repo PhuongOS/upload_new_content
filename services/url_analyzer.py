@@ -94,9 +94,10 @@ class URLAnalyzer:
         except Exception as e:
             return {"error": str(e)}
 
-    def generate_seo_product(self, raw_data):
+    def generate_seo_product(self, raw_data, youtube_url=None):
         """
-        Sử dụng AI để viết lại nội dung sản phẩm chuẩn SEO và chọn lọc ảnh
+        Sử dụng AI để viết lại nội dung sản phẩm chuẩn SEO và chọn lọc ảnh.
+        Nếu có youtube_url, sẽ chèn mã nhúng vào đầu mô tả.
         """
         if "error" in raw_data:
             return raw_data
@@ -115,7 +116,7 @@ class URLAnalyzer:
             "title": "SEO Optimized Product Title (Vietnamese)",
             "regular_price": "Numeric price found (no currency symbol)",
             "sale_price": "Suggest a slightly lower price if appropriate, or empty",
-            "description": "Engaging HTML SEO optimized description (Vietnamese)",
+            "description": "Engaging HTML SEO optimized description (Vietnamese). USE <img> tags with src from 'Scraped Images' to illustrate features inside the description.",
             "short_description": "Catchy short summary (Vietnamese)",
             "categories": "Suggest category IDs as a comma-separated string if you can guess from content, else empty",
             "images": "Comma-separated list of the best image URLs from the 'Scraped Images' list"
@@ -126,7 +127,21 @@ class URLAnalyzer:
             ai_response = self.ai.generate_content(user_prompt)
             json_match = re.search(r"\{.*\}", ai_response, re.DOTALL)
             if json_match:
-                return json.loads(json_match.group())
+                result = json.loads(json_match.group())
+                
+                # Chèn Video Youtube nếu có
+                if youtube_url:
+                    video_id = ""
+                    if 'v=' in youtube_url:
+                        video_id = youtube_url.split('v=')[-1].split('&')[0]
+                    elif 'youtu.be/' in youtube_url:
+                        video_id = youtube_url.split('youtu.be/')[-1].split('?')[0]
+                    
+                    if video_id:
+                        iframe = f'<div class="video-container" style="text-align:center; margin-bottom:20px;"><iframe width="560" height="315" src="https://www.youtube.com/embed/{video_id}" frameborder="0" allowfullscreen></iframe></div>\n'
+                        result['description'] = iframe + result.get('description', '')
+                
+                return result
             return {"error": "AI did not return valid JSON", "raw": ai_response}
         except Exception as e:
             return {"error": f"AI Error: {str(e)}"}

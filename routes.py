@@ -865,13 +865,15 @@ def woocommerce_analyze():
     api_key = data.get('api_key')
     system_prompt = data.get('system_prompt')
 
+    youtube_url = data.get('youtube_url')
+
     if not url or not api_key:
         return jsonify({"error": "Thiếu URL hoặc API Key"}), 400
 
     try:
         analyzer = URLAnalyzer(api_key, system_prompt)
         raw_info = analyzer.scrape_product_info(url)
-        seo_content = analyzer.generate_seo_product(raw_info)
+        seo_content = analyzer.generate_seo_product(raw_info, youtube_url=youtube_url)
         return jsonify(seo_content)
     except Exception as e:
         error_msg = str(e)
@@ -929,13 +931,45 @@ def woocommerce_import_csv():
 
 @api_bp.route('/api/v2/woocommerce/add-item', methods=['POST'])
 def woocommerce_add_item():
-    """Thêm một sản phẩm đơn lẻ vào hàng đợi đăng."""
-    data = request.json
+    """
+    Thêm một sản phẩm đơn lẻ vào hàng đợi đăng.
+    Hỗ trợ cả JSON và Multipart Form Data (để upload ảnh lên Drive).
+    """
     try:
+        if request.is_json:
+            data = request.json
+        else:
+            # Xử lý Multipart Form Data
+            data = request.form.to_dict()
+            uploaded_files = request.files.getlist('image_files')
+            parent_id = data.get('parent_folder_id', 'root')
+            
+            if uploaded_files:
+                from logic import upload_product_images_to_drive
+                files_data = []
+                for f in uploaded_files:
+                    if f.filename:
+                        files_data.append({
+                            'filename': f.filename,
+                            'content': f.read(),
+                            'content_type': f.content_type
+                        })
+                
+                if files_data:
+                    drive_links = upload_product_images_to_drive(data.get('title', 'Product'), files_data, parent_id)
+                    if drive_links:
+                        # Ghép thêm vào danh sách ảnh hiện có (nếu AI đã cào được ảnh từ link)
+                        existing_images = data.get('images', '')
+                        new_images_list = [existing_images] if existing_images else []
+                        new_images_list.extend(drive_links)
+                        data['images'] = ",".join(filter(None, new_images_list))
+        
         if not data.get('title'):
             return jsonify({"error": "Thiếu tiêu đề sản phẩm"}), 400
         
         data["status"] = "NEW"
+        from services.sheet_service import SheetService
+        from models.Woocommerce_db import WoocommerceDbModel
         SheetService.append_row(WoocommerceDbModel.SHEET_NAME, data)
         return jsonify({"success": True})
     except Exception as e:

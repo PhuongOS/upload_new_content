@@ -379,11 +379,25 @@
                             <div class="sub-card">
                                 <h4><i class="fas fa-magic"></i> AI URL Analyze</h4>
                                 <p class="sub-text">Cào thông tin từ link web khác và viết lại SEO.</p>
-                                <div class="input-group">
-                                    <input type="text" id="wooAnalyzeUrl"
-                                        placeholder="Nhập URL sản phẩm tham khảo..." />
+                                <div class="form-grid" style="grid-template-columns: 1fr; gap: 10px;">
+                                    <div class="input-group">
+                                        <label>Link sản phẩm gốc:</label>
+                                        <input type="text" id="wooAnalyzeUrl"
+                                            placeholder="https://example.com/product..." />
+                                    </div>
+                                    <div class="input-group">
+                                        <label>Link Youtube (Nếu có - sẽ nhúng vào đầu mô tả):</label>
+                                        <input type="text" id="wooYoutubeUrl"
+                                            placeholder="https://youtube.com/watch?v=..." />
+                                    </div>
+                                    <div class="input-group">
+                                        <label>Hình ảnh minh họa thêm (Sẽ upload lên Drive):</label>
+                                        <input type="file" id="wooImageFiles" multiple accept="image/*"
+                                            class="card-select" style="padding: 10px;" />
+                                    </div>
                                 </div>
-                                <button class="btn btn-primary btn-full" onclick="analyzeWooUrl()">
+                                <button class="btn btn-primary btn-full" onclick="analyzeWooUrl()"
+                                    style="margin-top: 15px;">
                                     <i class="fas fa-search"></i> Phân tích ngay
                                 </button>
                             </div>

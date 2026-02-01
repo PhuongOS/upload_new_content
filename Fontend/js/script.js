@@ -1903,7 +1903,11 @@ async function saveWooConfig() {
 // Analyze Tool
 async function analyzeWooUrl() {
     const urlInput = document.getElementById('wooAnalyzeUrl');
+    const youtubeInput = document.getElementById('wooYoutubeUrl');
+    const fileInput = document.getElementById('wooImageFiles');
+
     const url = urlInput.value.trim();
+    const youtubeUrl = youtubeInput.value.trim();
     const apiKey = localStorage.getItem('geminiApiKey');
     const systemPrompt = localStorage.getItem('wooGeminiSystemPrompt');
 
@@ -1925,7 +1929,8 @@ async function analyzeWooUrl() {
             body: JSON.stringify({
                 url: url,
                 api_key: apiKey.trim(),
-                system_prompt: systemPrompt
+                system_prompt: systemPrompt,
+                youtube_url: youtubeUrl
             })
         });
 
@@ -1953,15 +1958,35 @@ async function analyzeWooUrl() {
         `;
 
         if (await showConfirmModal("Kết quả AI Phân tích", previewHtml + "<br>Bạn có muốn thêm sản phẩm này vào hàng đợi đăng bài không?")) {
+            // Sử dụng FormData để gửi kèm file ảnh lên Drive
+            const formData = new FormData();
+            formData.append('title', data.title);
+            formData.append('regular_price', data.regular_price);
+            formData.append('sale_price', data.sale_price || '');
+            formData.append('description', data.description);
+            formData.append('short_description', data.short_description);
+            formData.append('categories', data.categories || '');
+            formData.append('images', data.images || '');
+            formData.append('source_url', url);
+            formData.append('parent_folder_id', localStorage.getItem('parentFolderId') || 'root');
+
+            // Đính kèm các file ảnh từ input
+            if (fileInput.files.length > 0) {
+                for (let i = 0; i < fileInput.files.length; i++) {
+                    formData.append('image_files', fileInput.files[i]);
+                }
+            }
+
             const addRes = await fetch('/api/v2/woocommerce/add-item', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...data, source_url: url })
+                body: formData // Không set header Content-Type, trình duyệt tự xử lý cho FormData
             });
 
             if (addRes.ok) {
                 showSuccessModal("Hoàn tất", "Sản phẩm đã được thêm vào Woocommerce_db.");
                 urlInput.value = ''; // Clear input
+                youtubeInput.value = '';
+                fileInput.value = '';
                 loadWooDb();
             } else {
                 const addErr = await addRes.json();
