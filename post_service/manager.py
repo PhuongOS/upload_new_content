@@ -143,7 +143,7 @@ class PostManager:
             print(f"[PostManager] Error looking up account_id: {e}")
             return None
 
-    def publish_item(self, sheet_name, index, task_id=None):
+    def publish_item(self, sheet_name, index, task_id=None, local_images=None):
         """
         Thực hiện đăng bài cho một dòng cụ thể trong Sheet.
         """
@@ -186,7 +186,7 @@ class PostManager:
             elif "Woocommerce" in sheet_name:
                 return self._handle_woocommerce_publish(item, sheet_name, index, task_id)
             elif "Haravan" in sheet_name:
-                return self._handle_haravan_publish(item, sheet_name, index, task_id)
+                return self._handle_haravan_publish(item, sheet_name, index, task_id, local_images=local_images)
                 
             return {"success": False, "error": "Nền tảng không được hỗ trợ."}
         except Exception as e:
@@ -664,7 +664,7 @@ class PostManager:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def _handle_haravan_publish(self, item, sheet_name, index, task_id=None):
+    def _handle_haravan_publish(self, item, sheet_name, index, task_id=None, local_images=None):
         """Xử lý đăng sản phẩm lên Haravan."""
         def update_task_msg(msg):
             if task_id and task_id in tasks:
@@ -772,6 +772,19 @@ class PostManager:
             link = f"{shop_url}/products/{handle}"
             
             update_task_msg(f"Thành công! ID: {p_id}")
+            
+            # Upload local Base64 images if provided
+            if local_images and len(local_images) > 0:
+                update_task_msg(f"Đang upload {len(local_images)} ảnh từ máy...")
+                for i, img_data in enumerate(local_images):
+                    try:
+                        filename = img_data.get('filename', f'image_{i+1}.jpg')
+                        base64_data = img_data.get('base64', '')
+                        if base64_data:
+                            publisher.upload_image_base64(p_id, base64_data, filename)
+                            update_task_msg(f"Upload ảnh {i+1}/{len(local_images)}: {filename}")
+                    except Exception as img_err:
+                        print(f"[Haravan] Lỗi upload ảnh {filename}: {img_err}")
             
             # Update Sheet
             item["status"] = "SUCCESS"

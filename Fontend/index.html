@@ -770,12 +770,33 @@
                         style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; min-height: 60px;">
                         <span class="sub-text" style="color: rgba(255,255,255,0.4);">Chưa có ảnh</span>
                     </div>
+                    <textarea id="editHrvImages" rows="2"
+                        placeholder="Nhập link ảnh, mỗi link một dòng hoặc ngăn cách bằng dấu phẩy..."
+                        oninput="updateHrvImagePreview()"></textarea>
+                    <p class="sub-text" style="margin-top: 5px; font-size: 11px;">Để trống nếu không có ảnh. Ảnh đầu
+                        tiên sẽ làm thumbnail.</p>
+                </div>
+
+                <!-- Upload ảnh từ máy -->
+                <div class="input-group">
+                    <label>Hoặc upload ảnh từ máy tính</label>
+                    <div class="file-drop-area mini" onclick="document.getElementById('hrvLocalImages').click()"
+                        style="border-color: var(--accent); background: rgba(59, 130, 246, 0.05);">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <span>Chọn ảnh (JPG, PNG, tối đa 5MB/ảnh)</span>
+                        <input type="file" id="hrvLocalImages" accept="image/*" multiple hidden
+                            onchange="handleHrvLocalImageUpload(event)">
+                    </div>
+                    <div id="hrvLocalImagePreview" class="local-images-preview"></div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeEditHaravanModal()">Hủy</button>
                 <div style="flex:1"></div>
                 <button class="btn btn-primary" onclick="saveHaravanItemEdit()">Lưu thay đổi</button>
+                <button class="btn btn-success" onclick="saveAndPublishHaravan()" style="margin-left: 10px;">
+                    <i class="fas fa-upload"></i> Lưu & Đăng
+                </button>
             </div>
         </div>
     </div>

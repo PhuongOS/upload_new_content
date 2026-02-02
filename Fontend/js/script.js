@@ -2437,9 +2437,12 @@ function openEditHaravanModal(index) {
     // Load product types and vendors for datalist
     loadHrvProductTypes();
 
-    // Load image preview
+    // Load image preview and populate textarea
     const imgContainer = document.getElementById('hrvImagePreview');
+    const imagesInput = document.getElementById('editHrvImages');
+
     if (item.images) {
+        imagesInput.value = item.images;
         const images = item.images.split(',').filter(u => u.trim());
         if (images.length > 0) {
             imgContainer.innerHTML = images.map(url =>
@@ -2449,6 +2452,7 @@ function openEditHaravanModal(index) {
             imgContainer.innerHTML = '<span class="sub-text" style="color: rgba(255,255,255,0.4);">Chưa có ảnh</span>';
         }
     } else {
+        imagesInput.value = '';
         imgContainer.innerHTML = '<span class="sub-text" style="color: rgba(255,255,255,0.4);">Chưa có ảnh</span>';
     }
 
@@ -2460,6 +2464,7 @@ function openEditHaravanModal(index) {
 
 function closeEditHaravanModal() {
     document.getElementById('editHaravanModal').classList.remove('visible');
+    clearLocalImages(); // Reset pending local images
 }
 
 // Tab switching for Haravan modal
@@ -2580,6 +2585,80 @@ function selectHrvDropdownItem(type, value) {
     document.getElementById(listId).classList.remove('show');
 }
 
+// Update image preview when typing in textarea
+function updateHrvImagePreview() {
+    const input = document.getElementById('editHrvImages').value;
+    const imgContainer = document.getElementById('hrvImagePreview');
+
+    if (!input.trim()) {
+        imgContainer.innerHTML = '<span class="sub-text" style="color: rgba(255,255,255,0.4);">Chưa có ảnh</span>';
+        return;
+    }
+
+    // Split by newline or comma
+    const urls = input.split(/[\n,]/).map(u => u.trim()).filter(u => u.startsWith('http'));
+
+    if (urls.length > 0) {
+        imgContainer.innerHTML = urls.map(url =>
+            `<img src="${url}" style="width: 60px; height: 60px; object-fit: cover; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);" onerror="this.style.display='none'">`
+        ).join('');
+    } else {
+        imgContainer.innerHTML = '<span class="sub-text" style="color: rgba(255,255,255,0.4);">Chưa có ảnh hợp lệ</span>';
+    }
+}
+
+// Local Image Upload for Haravan
+let hrvPendingLocalImages = []; // Array of {filename, base64, preview}
+
+function handleHrvLocalImageUpload(event) {
+    const files = event.target.files;
+    for (const file of files) {
+        // Check file size (max 5MB)
+        if (file.size > 5 * 1024 * 1024) {
+            alert(`Ảnh "${file.name}" quá lớn (>5MB). Vui lòng chọn ảnh nhỏ hơn.`);
+            continue;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            hrvPendingLocalImages.push({
+                filename: file.name,
+                base64: e.target.result.split(',')[1], // Remove data:image/...;base64, prefix
+                preview: e.target.result  // Full data URL for preview
+            });
+            renderLocalImagePreview();
+        };
+        reader.readAsDataURL(file);
+    }
+    // Reset input to allow selecting same file again
+    event.target.value = '';
+}
+
+function renderLocalImagePreview() {
+    const container = document.getElementById('hrvLocalImagePreview');
+    if (hrvPendingLocalImages.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+
+    container.innerHTML = hrvPendingLocalImages.map((img, i) => `
+        <div class="local-img-item">
+            <img src="${img.preview}" alt="${img.filename}">
+            <button class="remove-btn" onclick="removeLocalImage(${i})" title="Xóa ảnh">×</button>
+        </div>
+    `).join('');
+}
+
+function removeLocalImage(index) {
+    hrvPendingLocalImages.splice(index, 1);
+    renderLocalImagePreview();
+}
+
+function clearLocalImages() {
+    hrvPendingLocalImages = [];
+    renderLocalImagePreview();
+}
+
 // Filter dropdown on typing
 document.addEventListener('DOMContentLoaded', () => {
     ['editHrvType', 'editHrvVendor'].forEach(inputId => {
@@ -2623,6 +2702,7 @@ async function saveHaravanItemEdit() {
     item.tags = document.getElementById('editHrvTags').value;
     item.description = document.getElementById('editHrvDesc').value;
     item.short_description = document.getElementById('editHrvShortDesc').value;
+    item.images = document.getElementById('editHrvImages').value;
 
     try {
         const res = await fetch(`/api/v2/sheets/Haravan_db/${index}`, {
@@ -2639,6 +2719,79 @@ async function saveHaravanItemEdit() {
             alert("Lỗi cập nhật.");
         }
     } catch (e) { alert("Lỗi kết nối."); }
+}
+
+// Save and Publish with Local Images from Modal
+async function saveAndPublishHaravan() {
+    const index = parseInt(document.getElementById('editHrvIndex').value);
+    const item = currentHaravanData[index];
+    if (!item) return;
+
+    // Confirm action
+    const confirmed = await showConfirmModal({
+        title: "Lưu & Đăng sản phẩm?",
+        message: `Sản phẩm sẽ được lưu và đăng lên Haravan${hrvPendingLocalImages.length > 0 ? ` với ${hrvPendingLocalImages.length} ảnh upload` : ''}.`,
+        type: "primary",
+        okText: "Đăng ngay"
+    });
+    if (!confirmed) return;
+
+    // Update item from modal inputs
+    item.product_title = document.getElementById('editHrvTitle').value;
+    item.regular_price = document.getElementById('editHrvPrice').value;
+    item.sale_price = document.getElementById('editHrvSalePrice').value;
+    item.product_type = document.getElementById('editHrvType').value;
+    item.vendor = document.getElementById('editHrvVendor').value;
+    item.tags = document.getElementById('editHrvTags').value;
+    item.description = document.getElementById('editHrvDesc').value;
+    item.short_description = document.getElementById('editHrvShortDesc').value;
+    item.images = document.getElementById('editHrvImages').value;
+
+    // Save to sheet first
+    try {
+        const saveRes = await fetch(`/api/v2/sheets/Haravan_db/${index}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(item)
+        });
+        if (!saveRes.ok) {
+            alert("Lỗi lưu sản phẩm.");
+            return;
+        }
+    } catch (e) {
+        alert("Lỗi kết nối khi lưu.");
+        return;
+    }
+
+    // Close modal and show progress
+    closeEditHaravanModal();
+    addProgressItem(`[Haravan] Bắt đầu đăng bài #${item.stt}...`);
+
+    // Publish with local images
+    try {
+        const res = await fetch('/api/v2/post/publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sheet_name: 'Haravan_db',
+                index: index,
+                local_images: hrvPendingLocalImages  // Send Base64 images
+            })
+        });
+
+        const result = await res.json();
+        if (result.task_id) {
+            pollTaskProgress(result.task_id, 'Haravan');
+        } else if (result.error) {
+            addProgressItem(`[Haravan] Lỗi: ${result.error}`, true);
+        }
+    } catch (e) {
+        addProgressItem(`[Haravan] Lỗi: ${e.message}`, true);
+    }
+
+    // Clear local images after publish
+    hrvPendingLocalImages = [];
+    loadHaravanDb();
 }
 
 // Publish Function
@@ -2813,7 +2966,15 @@ function handleHaravanBulkAnalyzeCsv(event) {
             return;
         }
 
-        if (!confirm(`Tìm thấy ${links.length} links. Bắt đầu phân tích? (Có thể mất vài phút)`)) {
+        // Use custom confirm modal instead of browser confirm
+        const confirmed = await showConfirmModal({
+            title: "Xác nhận phân tích",
+            message: `Tìm thấy ${links.length} links. Bắt đầu phân tích? (Có thể mất vài phút)`,
+            type: "primary",
+            okText: "Bắt đầu"
+        });
+
+        if (!confirmed) {
             statusEl.style.display = 'none';
             return;
         }
@@ -2839,7 +3000,10 @@ function handleHaravanBulkAnalyzeCsv(event) {
                         regular_price: data.price ? data.price.toString().replace(/[^0-9]/g, '') : '0',
                         product_type: data.product_type || '',
                         vendor: data.vendor || '',
+                        tags: data.tags || '',
                         description_html: data.description || '',
+                        short_description: data.short_description || '',
+                        images: data.images || '',
                         source_url: link,
                         status: 'PENDING'
                     };

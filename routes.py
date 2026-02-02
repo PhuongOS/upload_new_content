@@ -672,6 +672,7 @@ def post_publish():
     data = request.json
     sheet_name = data.get('sheet_name')
     index = data.get('index')
+    local_images = data.get('local_images', [])  # Base64 images from frontend
     
     if not sheet_name or index is None:
         return jsonify({"error": "Thiếu thông tin bảng tính hoặc dòng"}), 400
@@ -682,13 +683,13 @@ def post_publish():
         "message": f"Đang chuẩn bị đăng bài (Dòng {index} - {sheet_name})..."
     }
     
-    def background_publish(tid, s_name, idx):
+    def background_publish(tid, s_name, idx, imgs):
         try:
             tasks[tid]["status"] = "processing"
             tasks[tid]["message"] = "Đang tải video và xử lý..."
             
             # Gọi hàm xử lý chính (đồng bộ, mất thời gian tải)
-            result = post_manager.publish_item(s_name, int(idx), tid)
+            result = post_manager.publish_item(s_name, int(idx), tid, local_images=imgs)
             
             if result.get("success"):
                 tasks[tid]["status"] = "success"
@@ -702,7 +703,7 @@ def post_publish():
             tasks[tid]["message"] = f"Lỗi hệ thống: {str(e)}"
 
     # Chạy thread ngầm
-    threading.Thread(target=background_publish, args=(task_id, sheet_name, index)).start()
+    threading.Thread(target=background_publish, args=(task_id, sheet_name, index, local_images)).start()
         
     return jsonify({
         "status": "queued", 
