@@ -29,6 +29,7 @@ let currentCalendarData = [];
 let currentFacebookData = [];
 let currentYoutubeData = [];
 let currentWooData = [];
+let currentHaravanData = []; // Haravan Data
 let allWooCategories = []; // Danh sách category từ WooCommerce
 let activeScheduleTarget = { index: null, platform: null };
 
@@ -71,6 +72,7 @@ navItems.forEach(item => {
         if (target === 'youtube-view') loadSheetData('Youtube_db');
         if (target === 'calendar-view') loadSheetData('Media_Calendar');
         if (target === 'woocommerce-view') loadWooDb();
+        if (target === 'haravan-view') loadHaravanDb();
     });
 });
 
@@ -82,6 +84,7 @@ window.onload = () => {
     fbGeminiSystemPromptInput.value = localStorage.getItem('fbGeminiSystemPrompt') || "Bạn là một người sáng tạo nội dung Facebook chuyên nghiệp. Hãy viết Hook ngắn gọn, thu hút, kèm icon và hashtag phù hợp.";
     ytGeminiSystemPromptInput.value = localStorage.getItem('ytGeminiSystemPrompt') || "Bạn là một người sáng tạo nội dung Youtube chuyên nghiệp. Hãy viết đoạn giới thiệu video hấp dẫn, tối ưu SEO và lôi cuốn người xem.";
     wooGeminiSystemPromptInput.value = localStorage.getItem('wooGeminiSystemPrompt') || "Bạn là một chuyên gia SEO WooCommerce. Hãy viết mô tả sản phẩm hấp dẫn, chuẩn SEO, bao gồm các thẻ HTML H2, H3, và các đoạn bullet points nổi bật tính năng.";
+    document.getElementById('haravanSystemPrompt').value = localStorage.getItem('haravanSystemPrompt') || "Bạn là một chuyên gia SEO Haravan. Hãy viết mô tả sản phẩm hấp dẫn, chuẩn SEO, bao gồm các thẻ HTML H2, H3, và các đoạn bullet points nổi bật tính năng.";
 
     // WooCommerce Specific Setup
     const wooSystemPrompt = "Bạn là một chuyên gia SEO WooCommerce. Hãy viết mô tả sản phẩm hấp dẫn, chuẩn SEO, bao gồm các thẻ HTML H2, H3, và các đoạn bullet points nổi bật tính năng.";
@@ -166,6 +169,7 @@ function saveConfig() {
     localStorage.setItem('fbGeminiSystemPrompt', fbGeminiSystemPromptInput.value.trim());
     localStorage.setItem('ytGeminiSystemPrompt', ytGeminiSystemPromptInput.value.trim());
     localStorage.setItem('wooGeminiSystemPrompt', wooGeminiSystemPromptInput.value.trim());
+    localStorage.setItem('haravanSystemPrompt', document.getElementById('haravanSystemPrompt').value.trim());
     alert('Cấu hình đã được lưu!');
 }
 
@@ -2307,4 +2311,472 @@ function startBulkPolling(taskId) {
 function loadPublishedHistory() {
     console.log("Reloading Published History...");
     loadSheetData('Published_History');
+}
+
+// --- HARAVAN INTEGRATION ---
+
+async function loadHaravanDb() {
+    const tbody = document.getElementById('haravanDbBody');
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center"><i class="fas fa-circle-notch fa-spin"></i> Đang tải dữ liệu...</td></tr>';
+
+    try {
+        const res = await fetch('/api/v2/sheets/Haravan_db');
+        const data = await res.json();
+        currentHaravanData = data;
+        renderHaravanTable(data);
+    } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: var(--danger)">Lỗi tải dữ liệu: ' + e.message + '</td></tr>';
+    }
+}
+
+function renderHaravanTable(data) {
+    const tbody = document.getElementById('haravanDbBody');
+    if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center">Chưa có dữ liệu.</td></tr>';
+        return;
+    }
+
+    const html = data.map((item, index) => {
+        const statusClass = item.status === 'SUCCESS' ? 'success' : (item.status === 'ERROR' ? 'danger' : 'warning');
+        const statusText = item.status || 'PENDING';
+
+        return `
+            <tr>
+                <td>${item.stt}</td>
+                <td style="max-width: 250px;">
+                    <div style="font-weight: 500;">${item.title || '(Chưa có tên)'}</div>
+                </td>
+                <td>${item.regular_price}</td>
+                <td>${item.product_type || '-'}</td>
+                <td><span class="badge badge-${statusClass}">${statusText}</span></td>
+                <td>
+                
+                    <div class="card-actions" style="justify-content: flex-start; align-items: center; border: none; padding: 0;">
+                     <button class="btn btn-sm btn-primary" onclick="publishHaravanItem(${index})" title="Đăng lên Haravan">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                        <button class="btn btn-sm btn-warning" onclick="openEditHaravanModal(${index})" title="Chỉnh sửa">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                       
+                        <button class="btn btn-sm btn-danger" onclick="deleteRow('Haravan_db', ${index})" title="Xóa">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    tbody.innerHTML = html;
+}
+
+// Config Functions
+async function openHaravanConfig() {
+    document.getElementById('haravanConfigModal').classList.add('visible');
+    // Load config
+    try {
+        const res = await fetch('/api/v2/sheets/Haravan_Config');
+        const data = await res.json();
+        if (data && data.length > 0) {
+            document.getElementById('hrv_url').value = data[0].shop_url || '';
+            document.getElementById('hrv_token').value = data[0].access_token || '';
+        }
+    } catch (e) { console.error(e); }
+}
+
+function closeHaravanConfig() {
+    document.getElementById('haravanConfigModal').classList.remove('visible');
+}
+
+async function saveHaravanConfig() {
+    const shopUrl = document.getElementById('hrv_url').value.trim();
+    const token = document.getElementById('hrv_token').value.trim();
+
+    if (!shopUrl || !token) return alert("Vui lòng nhập đầy đủ thông tin.");
+
+    const row = {
+        shop_url: shopUrl,
+        access_token: token
+    };
+
+    try {
+        // Assuming row 0 (index 0) update
+        const res = await fetch('/api/v2/sheets/Haravan_Config/0', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(row)
+        });
+        if (res.ok) {
+            alert("Lưu cấu hình thành công!");
+            closeHaravanConfig();
+        } else {
+            alert("Lỗi khi lưu cấu hình.");
+        }
+    } catch (e) { alert("Lỗi kết nối."); }
+}
+
+// Edit Functions
+function openEditHaravanModal(index) {
+    const item = currentHaravanData[index];
+    if (!item) return;
+
+    document.getElementById('editHrvIndex').value = index;
+    document.getElementById('editHrvTitle').value = item.title || '';
+    document.getElementById('editHrvPrice').value = item.regular_price || '';
+    document.getElementById('editHrvSalePrice').value = item.sale_price || '';
+    document.getElementById('editHrvType').value = item.product_type || '';
+    document.getElementById('editHrvVendor').value = item.vendor || '';
+    document.getElementById('editHrvTags').value = item.tags || '';
+    document.getElementById('editHrvDesc').value = item.description || '';
+    document.getElementById('editHrvShortDesc').value = item.short_description || '';
+
+    // Load collection chips
+    loadHrvCollections(item.collection_id || '');
+
+    // Load image preview
+    const imgContainer = document.getElementById('hrvImagePreview');
+    if (item.images) {
+        const images = item.images.split(',').filter(u => u.trim());
+        if (images.length > 0) {
+            imgContainer.innerHTML = images.map(url =>
+                `<img src="${url.trim()}" style="width: 60px; height: 60px; object-fit: cover; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);">`
+            ).join('');
+        } else {
+            imgContainer.innerHTML = '<span class="sub-text" style="color: rgba(255,255,255,0.4);">Chưa có ảnh</span>';
+        }
+    } else {
+        imgContainer.innerHTML = '<span class="sub-text" style="color: rgba(255,255,255,0.4);">Chưa có ảnh</span>';
+    }
+
+    // Reset tabs to editor view
+    switchHrvEditTab('editor');
+
+    document.getElementById('editHaravanModal').classList.add('visible');
+}
+
+function closeEditHaravanModal() {
+    document.getElementById('editHaravanModal').classList.remove('visible');
+}
+
+// Tab switching for Haravan modal
+function switchHrvEditTab(tab) {
+    const editorView = document.getElementById('hrvEditorView');
+    const previewView = document.getElementById('hrvPreviewView');
+    const tabs = document.querySelectorAll('.hrv-edit-tabs .btn-tab');
+
+    tabs.forEach(t => t.classList.remove('active'));
+
+    if (tab === 'editor') {
+        editorView.style.display = 'block';
+        previewView.style.display = 'none';
+        tabs[0].classList.add('active');
+    } else {
+        editorView.style.display = 'none';
+        previewView.style.display = 'block';
+        previewView.innerHTML = document.getElementById('editHrvDesc').value || '<p style="color: rgba(255,255,255,0.4);">Chưa có nội dung.</p>';
+        tabs[1].classList.add('active');
+    }
+}
+
+// Load Haravan collections as chips
+let hrvCollectionsCache = null;
+async function loadHrvCollections(selectedId = '') {
+    const container = document.getElementById('editHrvCollectionContainer');
+    container.innerHTML = '<span class="sub-text">Đang tải nhóm sản phẩm...</span>';
+
+    try {
+        // Use cache if available
+        if (!hrvCollectionsCache) {
+            const res = await fetch('/api/v2/haravan/collections');
+            if (res.ok) {
+                hrvCollectionsCache = await res.json();
+            } else {
+                container.innerHTML = '<span class="sub-text" style="color: #f87171;">Lỗi tải nhóm.</span>';
+                return;
+            }
+        }
+
+        const collections = hrvCollectionsCache.custom_collections || [];
+        if (collections.length === 0) {
+            container.innerHTML = '<span class="sub-text">Chưa có nhóm sản phẩm nào.</span>';
+            return;
+        }
+
+        const selectedIds = selectedId ? selectedId.split(',').map(s => s.trim()) : [];
+        container.innerHTML = collections.map(c => {
+            const isSelected = selectedIds.includes(String(c.id));
+            return `<span class="category-chip ${isSelected ? 'selected' : ''}" data-id="${c.id}" onclick="toggleHrvCollection(this)">
+                ${c.title}
+            </span>`;
+        }).join('');
+
+        // Update hidden input
+        document.getElementById('editHrvCollection').value = selectedIds.join(',');
+
+    } catch (e) {
+        container.innerHTML = '<span class="sub-text" style="color: #f87171;">Lỗi kết nối.</span>';
+    }
+}
+
+function toggleHrvCollection(el) {
+    el.classList.toggle('selected');
+    const selected = Array.from(document.querySelectorAll('#editHrvCollectionContainer .category-chip.selected'))
+        .map(c => c.dataset.id);
+    document.getElementById('editHrvCollection').value = selected.join(',');
+}
+
+
+async function saveHaravanItemEdit() {
+    const index = parseInt(document.getElementById('editHrvIndex').value);
+    const item = currentHaravanData[index];
+    if (!item) return;
+
+    // Update item object
+    item.title = document.getElementById('editHrvTitle').value;
+    item.regular_price = document.getElementById('editHrvPrice').value;
+    item.sale_price = document.getElementById('editHrvSalePrice').value;
+    item.product_type = document.getElementById('editHrvType').value;
+    item.vendor = document.getElementById('editHrvVendor').value;
+    item.tags = document.getElementById('editHrvTags').value;
+    item.description = document.getElementById('editHrvDesc').value;
+    item.short_description = document.getElementById('editHrvShortDesc').value;
+
+    try {
+        const res = await fetch(`/api/v2/sheets/Haravan_db/${index}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(item)
+        });
+
+        if (res.ok) {
+            alert("Đã cập nhật sản phẩm!");
+            closeEditHaravanModal();
+            loadHaravanDb();
+        } else {
+            alert("Lỗi cập nhật.");
+        }
+    } catch (e) { alert("Lỗi kết nối."); }
+}
+
+// Publish Function
+async function publishHaravanItem(index) {
+    const confirmed = await showConfirmModal({
+        title: "Đăng sản phẩm?",
+        message: "Sản phẩm sẽ được tạo mới trên Haravan.",
+        type: "primary",
+        okText: "Đăng ngay"
+    });
+    if (!confirmed) return;
+
+    // Check Status first
+    const stt = currentHaravanData[index].stt;
+    // Call publish API
+    // We reuse /api/v2/post/publish but payload might need adjustment or we use manager routing
+    // logic.py uses Sheet Name to dispatch.
+
+    // We can call /api/v2/post/publish with:
+    // { sheet_name: "Haravan_db", index: index }
+
+    // Wait, the API signature in server.py/routes.py:
+    // @api_bp.route('/api/v2/post/publish', methods=['POST']) -> expects body with sheet_name, index...
+
+    addProgressItem(`[Haravan] Bắt đầu đăng bài #${stt}...`);
+
+    try {
+        const res = await fetch('/api/v2/post/publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sheet_name: 'Haravan_db',
+                index: index
+            })
+        });
+
+        const result = await res.json();
+        // Start Polling for progress (PostManager sends task_id)
+        if (result.task_id) {
+            localStorage.setItem('lastTaskId', result.task_id);
+            addProgressItem(`[BG] Task ID: ${result.task_id} đã được tạo.`);
+        } else {
+            // Direct result
+            if (res.ok) {
+                addProgressItem(`✅ Đã đăng thành công! Link: ${result.link}`);
+                loadHaravanDb();
+            } else {
+                addProgressItem(`❌ Lỗi: ${result.error}`);
+            }
+        }
+    } catch (e) {
+        addProgressItem(`❌ Lỗi hệ thống: ${e.message}`);
+    }
+}
+
+// --- HARAVAN DASHBOARD ACTIONS ---
+
+async function analyzeHaravanUrl() {
+    const urlInput = document.getElementById('hrvAnalyzeUrl');
+    const url = urlInput.value.trim();
+    if (!url) return alert('Vui lòng nhập Link sản phẩm!');
+
+    const btn = document.querySelector('#haravan-view .btn-primary');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang phân tích...';
+    btn.disabled = true;
+
+    try {
+        // Use scraper-based endpoint (parity with Woo)
+        const res = await fetch('/api/v2/haravan/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                url: url,
+                api_key: localStorage.getItem('geminiApiKey'),
+                system_prompt: localStorage.getItem('haravanSystemPrompt') || "You are a Haravan Product Expert. Extract product info...",
+                youtube_url: document.getElementById('hrvYoutubeUrl').value
+            })
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+            const newItem = {
+                stt: currentHaravanData.length + 1,
+                product_title: data.title || 'Draft Product',
+                regular_price: data.price ? data.price.toString().replace(/[^0-9]/g, '') : '0',
+                product_type: data.product_type || '',
+                vendor: data.vendor || '',
+                tags: data.tags || '',
+                description_html: data.description || '',
+                short_description: data.short_description || '',
+                images: data.images || '',
+                source_url: url,
+                status: 'PENDING'
+            };
+
+            await fetch('/api/v2/sheets/Haravan_db', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newItem)
+            });
+
+            alert('Phân tích và thêm thành công!');
+            loadHaravanDb();
+        } else {
+            alert('Lỗi AI: ' + (data.error || 'Unknown error'));
+        }
+    } catch (e) {
+        alert('Lỗi hệ thống: ' + e.message);
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+}
+
+function handleHaravanCsv(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async function (e) {
+        const text = e.target.result;
+        const lines = text.split('\n').filter(line => line.trim() !== '');
+        let count = 0;
+        for (let i = 1; i < lines.length; i++) {
+            const cols = lines[i].split(',');
+            if (cols.length < 2) continue;
+            const newItem = {
+                stt: currentHaravanData.length + 1 + count,
+                product_title: cols[0] || 'Imported Product',
+                regular_price: cols[1] || '0',
+                status: 'PENDING'
+            };
+            await fetch('/api/v2/sheets/Haravan_db', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newItem)
+            });
+            count++;
+        }
+        alert(`Đã import ${count} sản phẩm!`);
+        loadHaravanDb();
+    };
+    reader.readAsText(file);
+}
+
+// --- HARAVAN BULK LINK ANALYSIS ---
+function handleHaravanBulkAnalyzeCsv(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const statusEl = document.getElementById('hrvBulkAnalyzeStatus');
+    const progressEl = document.getElementById('hrvBulkAnalyzeProgress');
+    statusEl.style.display = 'block';
+    progressEl.style.width = '0%';
+
+    const reader = new FileReader();
+    reader.onload = async function (e) {
+        const text = e.target.result;
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        const links = [];
+        const urlRegex = /(https?:\/\/[^\s,]+)/g;
+
+        lines.forEach(line => {
+            const match = line.match(urlRegex);
+            if (match) links.push(match[0]);
+        });
+
+        if (links.length === 0) {
+            alert("Không tìm thấy link hợp lệ trong file CSV!");
+            statusEl.style.display = 'none';
+            return;
+        }
+
+        if (!confirm(`Tìm thấy ${links.length} links. Bắt đầu phân tích? (Có thể mất vài phút)`)) {
+            statusEl.style.display = 'none';
+            return;
+        }
+
+        let completed = 0;
+        for (const link of links) {
+            try {
+                const res = await fetch('/api/v2/haravan/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: link,
+                        api_key: localStorage.getItem('geminiApiKey'),
+                        system_prompt: localStorage.getItem('haravanSystemPrompt') || "You are a Haravan Product Expert...",
+                    })
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    const newItem = {
+                        stt: currentHaravanData.length + 1,
+                        product_title: data.title || 'Draft Product',
+                        regular_price: data.price ? data.price.toString().replace(/[^0-9]/g, '') : '0',
+                        product_type: data.product_type || '',
+                        vendor: data.vendor || '',
+                        description_html: data.description || '',
+                        source_url: link,
+                        status: 'PENDING'
+                    };
+                    await fetch('/api/v2/sheets/Haravan_db', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(newItem)
+                    });
+                }
+            } catch (err) {
+                console.warn("Error analyzing link", link, err);
+            }
+            completed++;
+            progressEl.style.width = `${(completed / links.length) * 100}%`;
+        }
+
+        alert("Hoàn tất phân tích hàng loạt!");
+        statusEl.style.display = 'none';
+        loadHaravanDb();
+    };
+    reader.readAsText(file);
 }

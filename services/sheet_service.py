@@ -7,6 +7,8 @@ from models.Youtube_Config import YoutubeConfModel
 from models.History_db import HistoryDbModel
 from models.Woocommerce_Config import WoocommerceConfModel
 from models.Woocommerce_db import WoocommerceDbModel
+from models.Haravan_Config import HaravanConfModel
+from models.Haravan_db import HaravanDbModel
 from logic import get_creds
 
 class SheetService:
@@ -21,7 +23,9 @@ class SheetService:
             "Youtube_Config": YoutubeConfModel,
             "Published_History": HistoryDbModel,
             "Woocommerce_Config": WoocommerceConfModel,
-            "Woocommerce_db": WoocommerceDbModel
+            "Woocommerce_db": WoocommerceDbModel,
+            "Haravan_Config": HaravanConfModel,
+            "Haravan_db": HaravanDbModel
         }
         return models.get(name)
 

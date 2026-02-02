@@ -10,6 +10,8 @@ from services.account_service import AccountService
 from logic import get_creds, tasks
 from .woocommerce_publisher import WoocommercePublisher
 from models.Woocommerce_Config import WoocommerceConfModel
+from .haravan_publisher import HaravanPublisher
+from models.Haravan_Config import HaravanConfModel
 
 class PostManager:
     """
@@ -183,6 +185,8 @@ class PostManager:
                 return self._handle_youtube_publish(item, sheet_name, index, task_id, scheduled_time=scheduled_iso)
             elif "Woocommerce" in sheet_name:
                 return self._handle_woocommerce_publish(item, sheet_name, index, task_id)
+            elif "Haravan" in sheet_name:
+                return self._handle_haravan_publish(item, sheet_name, index, task_id)
                 
             return {"success": False, "error": "Nền tảng không được hỗ trợ."}
         except Exception as e:
@@ -660,7 +664,127 @@ class PostManager:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def publish_now(self, index):
+    def _handle_haravan_publish(self, item, sheet_name, index, task_id=None):
+        """Xử lý đăng sản phẩm lên Haravan."""
+        def update_task_msg(msg):
+            if task_id and task_id in tasks:
+                tasks[task_id]["message"] = msg
+                print(f"[PostManager] {msg}")
+
+        print(f"[PostManager] Haravan Publish - Row {index}")
+        
+        # 1. Lấy Config
+        update_task_msg("Đang tải cấu hình Haravan...")
+        configs = SheetService.get_all_rows("Haravan_Config")
+        if not configs:
+            return {"success": False, "error": "Chưa cấu hình Haravan Shop URL/Token."}
+        
+        config = configs[0] # Lấy dòng đầu tiên
+        shop_url = config.get("shop_url")
+        token = config.get("access_token")
+
+        if not shop_url or not token:
+             return {"success": False, "error": "Thiếu Shop URL hoặc Access Token."}
+
+        publisher = HaravanPublisher(shop_url, token)
+
+        # 2. Prepare Data
+        update_task_msg("Đang chuẩn bị dữ liệu sản phẩm...")
+        
+        title = item.get('title')
+        if not title: return {"success": False, "error": "Thiếu Tên sản phẩm"}
+
+        # Xử lý giá
+        try:
+            price = float(str(item.get('regular_price', '0')).replace(',', '').replace('.', ''))
+        except: price = 0
+        
+        try:
+            compare_price = float(str(item.get('sale_price', '0')).replace(',', '').replace('.', ''))
+            # Haravan logic: compare_at_price is the original (higher) price, price is the selling price
+            # But usually 'regular_price' in UI means the crossed-out price if sale exists? 
+            # Let's map: 
+            # If Sale Price exists: Price = Sale, Compare = Regular
+            # If No Sale: Price = Regular, Compare = Null
+            if compare_price > 0:
+                final_price = compare_price
+                original_price = price
+            else:
+                final_price = price
+                original_price = None
+        except:
+             final_price = price
+             original_price = None
+
+        payload = {
+            "title": title,
+            "body_html": item.get('description', ''),
+            "vendor": item.get('vendor', ''),
+            "product_type": item.get('product_type', ''),
+            "tags": item.get('tags', ''),
+            "published": True,
+            "variants": [
+                {
+                    "option1": "Default Title",
+                    "price": final_price,
+                    "compare_at_price": original_price,
+                    "sku": item.get('sku', '') or f"SKU-{int(time.time())}",
+                    "grams": 200,
+                    "inventory_policy": "deny",
+                    "fulfillment_service": "manual",
+                    "inventory_management": "manual",
+                    "requires_shipping": True
+                }
+            ],
+            "options": [
+                {
+                    "name": "Title",
+                    "values": ["Default Title"]
+                }
+            ]
+        }
+        
+        # Images
+        image_input = item.get('images')
+        images = []
+        if image_input:
+            # Check JSON list or single string
+             if image_input.strip().startswith('[') and image_input.strip().endswith(']'):
+                 try: 
+                     images = json.loads(image_input)
+                 except: images = [image_input]
+             else:
+                 # Comma separated? or single
+                 images = [url.strip() for url in image_input.split(',')] if ',' in image_input else [image_input]
+
+        if images:
+             # Haravan accepts list of {src: url}
+             payload["images"] = [{"src": img} for img in images if img.startswith('http')]
+
+        # 3. Create Product
+        update_task_msg("Đang tạo sản phẩm trên Haravan...")
+        res = publisher.create_product(payload)
+        
+        if res["success"]:
+            product = res["data"].get("product", {})
+            p_id = product.get("id")
+            handle = product.get("handle")
+            link = f"{shop_url}/products/{handle}"
+            
+            update_task_msg(f"Thành công! ID: {p_id}")
+            
+            # Update Sheet
+            item["status"] = "SUCCESS"
+            item["haravan_id"] = str(p_id)
+            item["haravan_link"] = link
+            SheetService.update_row(sheet_name, index, item)
+            
+            return {"success": True, "product_id": p_id, "link": link}
+        else:
+            update_task_msg(f"Lỗi: {res.get('error')}")
+            item["status"] = "ERROR"
+            SheetService.update_row(sheet_name, index, item)
+            return res
         """
         [NEW] Chuyển ngay bài viết đang SCHEDULED sang PUBLISHED (Public Now).
         Bỏ qua thời gian chờ.

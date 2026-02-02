@@ -1760,6 +1760,11 @@ input:checked+.slider:before {
   /* Nới rộng modal cho editor */
 }
 
+#editHaravanModal .modal-content {
+  max-width: 1024px;
+  width: 95%;
+}
+
 .preview-box img {
   max-width: 100%;
   height: auto;
@@ -1798,7 +1803,8 @@ input:checked+.slider:before {
   border-color: var(--primary);
 }
 
-.category-chip.active {
+.category-chip.active,
+.category-chip.selected {
   background: var(--primary);
   color: white;
   border-color: var(--primary);

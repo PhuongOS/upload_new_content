@@ -47,6 +47,10 @@
                         <i class="fas fa-shopping-cart"></i>
                         <span>WooCommerce</span>
                     </li>
+                    <li class="nav-item" data-target="haravan-view">
+                        <i class="fas fa-store"></i>
+                        <span>Haravan</span>
+                    </li>
                     <li class="nav-item" data-target="history-view">
                         <i class="fas fa-history"></i>
                         <span>Bài đã đăng</span>
@@ -254,6 +258,11 @@
                                     <label><i class="fas fa-shopping-bag"></i> WooCommerce System Prompt AI</label>
                                     <textarea id="wooGeminiSystemPrompt" rows="2"
                                         placeholder="Định hướng cho AI viết bài WooCommerce..."></textarea>
+                                </div>
+                                <div class="input-group">
+                                    <label><i class="fas fa-store"></i> Haravan System Prompt AI</label>
+                                    <textarea id="haravanSystemPrompt" rows="2"
+                                        placeholder="Định hướng cho AI viết bài Haravan..."></textarea>
                                 </div>
                                 <button class="btn btn-primary" onclick="saveConfig()">Lưu cấu hình hệ thống</button>
                             </div>
@@ -481,6 +490,121 @@
                         </div>
                     </div>
                 </section>
+
+                <!-- VIEW: Haravan Management -->
+                <section id="haravan-view" class="view">
+                    <div class="glass-card">
+                        <div class="section-header">
+                            <i class="fas fa-store"></i>
+                            <h3>Quản lý Haravan</h3>
+                            <div class="header-actions">
+                                <button class="btn btn-secondary" onclick="openHaravanConfig()">
+                                    <i class="fas fa-cog"></i> Cấu hình
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="woo-dashboard-grid">
+                            <!-- Tool AI Analyzer -->
+                            <div class="sub-card">
+                                <h4><i class="fas fa-magic"></i> AI URL Analyze</h4>
+                                <p class="sub-text">Cào thông tin từ link web khác và viết lại cho Haravan.</p>
+                                <div class="form-grid" style="grid-template-columns: 1fr; gap: 10px;">
+                                    <div class="input-group">
+                                        <label>Link sản phẩm gốc:</label>
+                                        <input type="text" id="hrvAnalyzeUrl"
+                                            placeholder="https://shopee.vn/product..." />
+                                    </div>
+                                    <div class="input-group">
+                                        <label>Link Youtube (Nếu có):</label>
+                                        <input type="text" id="hrvYoutubeUrl"
+                                            placeholder="https://youtube.com/watch?v=..." />
+                                    </div>
+                                    <div class="input-group">
+                                        <label>Hình ảnh minh họa thêm:</label>
+                                        <input type="file" id="hrvImageFiles" multiple accept="image/*"
+                                            class="card-select" style="padding: 10px;" />
+                                    </div>
+                                </div>
+                                <button class="btn btn-primary btn-full" onclick="analyzeHaravanUrl()"
+                                    style="margin-top: 15px;">
+                                    <i class="fas fa-search"></i> Phân tích ngay
+                                </button>
+                            </div>
+
+                            <!-- Bulk CSV Upload -->
+                            <!-- Bulk CSV Upload -->
+                            <div class="sub-card">
+                                <h4><i class="fas fa-file-csv"></i> Bulk Upload CSV</h4>
+                                <p class="sub-text">Đăng hàng loạt sản phẩm từ file CSV.</p>
+                                <div class="file-drop-area mini"
+                                    onclick="document.getElementById('hrvCsvFile').click()">
+                                    <i class="fas fa-upload"></i>
+                                    <span>Chọn file CSV</span>
+                                    <input type="file" id="hrvCsvFile" accept=".csv" hidden
+                                        onchange="handleHaravanCsv(event)" />
+                                </div>
+                            </div>
+
+                            <!-- Bulk Link Analysis -->
+                            <div class="sub-card"
+                                style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 15px;">
+                                <h4><i class="fas fa-magic"></i> Bulk Link Analysis</h4>
+                                <p class="sub-text">AI phân tích hàng loạt link từ file CSV (chỉ cần link).</p>
+                                <div class="file-drop-area mini"
+                                    style="border-color: var(--accent); background: rgba(59, 130, 246, 0.05);"
+                                    onclick="document.getElementById('hrvBulkLinkFile').click()">
+                                    <i class="fas fa-robot"></i>
+                                    <span>Chọn file CSV link</span>
+                                    <input type="file" id="hrvBulkLinkFile" accept=".csv" hidden
+                                        onchange="handleHaravanBulkAnalyzeCsv(event)" />
+                                </div>
+                                <div id="hrvBulkAnalyzeStatus"
+                                    style="font-size: 11px; margin-top: 10px; display: none;">
+                                    <span class="badge badge-info"><i class="fas fa-sync fa-spin"></i> Đang xử
+                                        lý...</span>
+                                    <div class="progress"
+                                        style="height: 4px; margin-top: 5px; background: rgba(255,255,255,0.1);">
+                                        <div id="hrvBulkAnalyzeProgress" class="progress-bar"
+                                            style="width: 0%; height:100%; background: var(--accent);"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="section-divider"></div>
+
+                        <div class="section-header">
+                            <i class="fas fa-list-ul"></i>
+                            <h4>Danh sách sản phẩm chờ đăng</h4>
+                            <div class="header-actions">
+                                <button class="btn btn-icon" onclick="loadHaravanDb()"><i
+                                        class="fas fa-sync-alt"></i></button>
+                            </div>
+                        </div>
+
+                        <div class="table-container">
+                            <table class="modern-table">
+                                <thead>
+                                    <tr>
+                                        <th>STT</th>
+                                        <th>Sản phẩm</th>
+                                        <th>Giá</th>
+                                        <th>Loại SP</th>
+                                        <th>Trạng thái</th>
+                                        <th>Hành động</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="haravanDbBody">
+                                    <!-- Dynamic rows -->
+                                    <tr>
+                                        <td colspan="6" style="text-align:center">Đang tải dữ liệu...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
             </div>
         </main>
     </div>
@@ -521,6 +645,132 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeWooConfig()">Hủy</button>
                 <button class="btn btn-primary" onclick="saveWooConfig()">Lưu cấu hình</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Haravan Configuration -->
+    <div id="haravanConfigModal" class="modal-overlay">
+        <div class="modal-content glass-card">
+            <div class="modal-header">
+                <h3><i class="fas fa-cog"></i> Cấu hình Haravan</h3>
+                <span class="close-modal" onclick="closeHaravanConfig()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="input-group">
+                    <label>Haravan Shop URL:</label>
+                    <input type="text" id="hrv_url" placeholder="https://yourshop.myharavan.com" />
+                </div>
+                <div class="input-group">
+                    <label>Access Token (Private App):</label>
+                    <input type="password" id="hrv_token" placeholder="shpat_..." />
+                </div>
+                <div class="info-box" style="margin-top: 10px; font-size: 12px; opacity: 0.8;">
+                    <i class="fas fa-info-circle"></i> Bạn cần tạo Private App trong trang admin Haravan để lấy Token.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeHaravanConfig()">Hủy</button>
+                <button class="btn btn-primary" onclick="saveHaravanConfig()">Lưu cấu hình</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Edit Haravan Item (Advanced) -->
+    <div id="editHaravanModal" class="modal-overlay">
+        <div class="modal-content glass-card">
+            <div class="modal-header">
+                <h3><i class="fas fa-edit"></i> Chỉnh sửa sản phẩm chờ đăng</h3>
+                <button class="btn-close" onclick="closeEditHaravanModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editHrvIndex">
+                <div class="input-group">
+                    <label>Tiêu đề sản phẩm</label>
+                    <input type="text" id="editHrvTitle" placeholder="Nhập tiêu đề...">
+                </div>
+
+                <div class="row">
+                    <div class="col">
+                        <div class="input-group">
+                            <label>Giá niêm yết</label>
+                            <input type="text" id="editHrvPrice" placeholder="Ví dụ: 250000">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="input-group">
+                            <label>Giá khuyến mãi</label>
+                            <input type="text" id="editHrvSalePrice" placeholder="Trống nếu không có">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col">
+                        <div class="input-group">
+                            <label>Loại sản phẩm (Product Type)</label>
+                            <input type="text" id="editHrvType" list="hrvTypeList" placeholder="Chọn hoặc nhập mới...">
+                            <datalist id="hrvTypeList"></datalist>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="input-group">
+                            <label>Nhà cung cấp (Vendor)</label>
+                            <input type="text" id="editHrvVendor" list="hrvVendorList"
+                                placeholder="Chọn hoặc nhập mới...">
+                            <datalist id="hrvVendorList"></datalist>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label>Nhóm sản phẩm (Collection)</label>
+                    <div id="editHrvCollectionContainer" class="category-chips-container"
+                        style="max-height: 120px; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 8px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid var(--glass-border);">
+                        <span class="sub-text">Đang tải nhóm sản phẩm...</span>
+                    </div>
+                    <input type="hidden" id="editHrvCollection">
+                    <small style="color: rgba(255,255,255,0.4); margin-top: 5px;">Nhấp để chọn hoặc bỏ chọn
+                        nhóm.</small>
+                </div>
+
+                <div class="input-group">
+                    <label>Tags (ngăn cách bởi dấu phẩy)</label>
+                    <input type="text" id="editHrvTags" placeholder="mới, sale, hot...">
+                </div>
+
+                <!-- Editor vs Preview -->
+                <div class="hrv-edit-tabs" style="display: flex; gap: 10px; margin-bottom: 5px;">
+                    <button class="btn-tab active" onclick="switchHrvEditTab('editor')">Trình chỉnh sửa (HTML)</button>
+                    <button class="btn-tab" onclick="switchHrvEditTab('preview')">Xem trước (Preview)</button>
+                </div>
+
+                <div id="hrvEditorView" class="input-group">
+                    <label>Mô tả chi tiết (HTML)</label>
+                    <textarea id="editHrvDesc" rows="12" style="font-family: monospace; font-size: 13px;"></textarea>
+                </div>
+                <div id="hrvPreviewView" class="preview-box"
+                    style="display: none; height: 300px; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                </div>
+
+                <div class="input-group" style="margin-top: 15px;">
+                    <label>Mô tả ngắn</label>
+                    <textarea id="editHrvShortDesc" rows="3"></textarea>
+                </div>
+
+                <!-- Image Preview -->
+                <div class="input-group" style="margin-top: 15px;">
+                    <label>Hình ảnh sản phẩm</label>
+                    <div id="hrvImagePreview"
+                        style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; min-height: 60px;">
+                        <span class="sub-text" style="color: rgba(255,255,255,0.4);">Chưa có ảnh</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeEditHaravanModal()">Hủy</button>
+                <div style="flex:1"></div>
+                <button class="btn btn-primary" onclick="saveHaravanItemEdit()">Lưu thay đổi</button>
             </div>
         </div>
     </div>

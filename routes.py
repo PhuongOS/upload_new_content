@@ -889,6 +889,73 @@ def woocommerce_analyze():
             status_code = 403
         return jsonify({"error": error_msg}), status_code
 
+@api_bp.route('/api/v2/haravan/analyze', methods=['POST'])
+def haravan_analyze():
+    """Phân tích URL sản phẩm bằng AI (Dành cho Haravan)."""
+    data = request.json
+    url = data.get('url') # Can be passed as 'url' or inferred from prompt in frontend, but better explicit.
+    # Frontend script currently sends system_prompt/user_prompt to ai/generate.
+    # We will change frontend to send url/api_key like woo.
+    
+    api_key = data.get('api_key')
+    system_prompt = data.get('system_prompt')
+    youtube_url = data.get('youtube_url')
+
+    if not url or not api_key:
+        return jsonify({"error": "Thiếu URL hoặc API Key"}), 400
+
+    try:
+        # Reuse URLAnalyzer - it is generic enough for product scraping
+        analyzer = URLAnalyzer(api_key, system_prompt)
+        raw_info = analyzer.scrape_product_info(url)
+        
+        # We might want to customize the prompt for Haravan if needed, 
+        # but the generic SEO product generation is likely fine.
+        # The prompt usually instructs output format.
+        seo_content = analyzer.generate_seo_product(raw_info, youtube_url=youtube_url)
+        return jsonify(seo_content)
+    except Exception as e:
+        error_msg = str(e)
+        status_code = 500
+        if any(code in error_msg for code in ["429", "Too Many Requests", "exhausted"]):
+            status_code = 429
+        elif "503" in error_msg or "Service Unavailable" in error_msg:
+            status_code = 503
+        elif "403" in error_msg or "Permission denied" in error_msg:
+            status_code = 403
+        return jsonify({"error": error_msg}), status_code
+
+@api_bp.route('/api/v2/haravan/collections', methods=['GET'])
+def haravan_collections():
+    """Lấy danh sách nhóm sản phẩm (Collections) từ Haravan."""
+    from post_service.haravan_publisher import HaravanPublisher
+    try:
+        configs = SheetService.get_all_rows("Haravan_Config")
+        if not configs:
+            return jsonify({"error": "Chưa cấu hình Haravan"}), 400
+        
+        config = configs[0]
+        shop_url = config.get("shop_url")
+        token = config.get("access_token")
+        
+        if not shop_url or not token:
+            return jsonify({"error": "Thiếu Shop URL hoặc Access Token"}), 400
+        
+        publisher = HaravanPublisher(shop_url, token)
+        
+        # Fetch both custom and smart collections
+        custom_res = publisher.get_custom_collections()
+        smart_res = publisher.get_smart_collections()
+        
+        result = {
+            "custom_collections": custom_res.get("data", {}).get("custom_collections", []) if custom_res.get("success") else [],
+            "smart_collections": smart_res.get("data", {}).get("smart_collections", []) if smart_res.get("success") else []
+        }
+        
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @api_bp.route('/api/v2/woocommerce/db', methods=['GET'])
 def woocommerce_db():
     """Lấy danh sách sản phẩm từ Woocommerce_db."""
@@ -1060,3 +1127,73 @@ def woocommerce_delete_item():
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# --- HARAVAN ADVANCED API ---
+from post_service.haravan_publisher import HaravanPublisher
+from models.Haravan_Config import HaravanConfModel
+
+def get_haravan_publisher():
+    """Helper to get initialized HaravanPublisher locally"""
+    configs = SheetService.get_all_rows("Haravan_Config")
+    if not configs:
+        return None
+    conf = configs[0]
+    return HaravanPublisher(conf.get("shop_url"), conf.get("access_token"))
+
+@api_bp.route('/api/v2/haravan/collections', methods=['GET'])
+def get_haravan_collections():
+    """Fetch Custom and Smart collections"""
+    publisher = get_haravan_publisher()
+    if not publisher:
+        return jsonify({"success": False, "error": "Haravan config missing"}), 400
+    
+    try:
+        custom = publisher.get_custom_collections()
+        smart = publisher.get_smart_collections()
+        
+        collections = []
+        if custom.get("success"):
+            collections.extend(custom["data"].get("custom_collections", []))
+        if smart.get("success"):
+            collections.extend(smart["data"].get("smart_collections", []))
+            
+        return jsonify({"success": True, "collections": collections})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@api_bp.route('/api/v2/haravan/metadata', methods=['GET'])
+def get_haravan_metadata():
+    """Fetch Product Types and Vendors"""
+    publisher = get_haravan_publisher()
+    if not publisher:
+        return jsonify({"success": False, "error": "Haravan config missing"}), 400
+        
+    try:
+        res = publisher.get_product_types()
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@api_bp.route('/api/v2/haravan/upload-image', methods=['POST'])
+def haravan_upload_image():
+    """
+    Upload local image to Haravan (Draft Product approach OR direct update if PID known).
+    Wait, Haravan API requires a product_id to upload image.
+    Strategy:
+    1. If product_id provided, upload to it.
+    2. If not, we cannot upload 'orphan' images easily like WP.
+    
+    ALTERNATIVE: We return base64 string to Frontend, and Frontend embeds it in the 'Create Product' payload.
+    Haravan 'Create Product' API supports "images": [{"attachment": "base64"}] directly.
+    
+    So we don't necessarily need a standalone upload endpoint unless we want to host it somewhere.
+    BUT, to support 'Preview' we might want to return the base64.
+    
+    Actually, let's keep this simple:
+    Frontend converts file to Base64 -> Sends to Create/Update Product API.
+    Backend 'publish_item' logic already exists.
+    
+    We might need an endpoint to "Test Upload" or similar?
+    Let's stick to Metadata endpoints for now.
+    """
+    return jsonify({"message": "Use Create Product payload for images"}), 200
