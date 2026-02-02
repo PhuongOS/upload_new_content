@@ -709,16 +709,21 @@
                     <div class="col">
                         <div class="input-group">
                             <label>Loại sản phẩm (Product Type)</label>
-                            <input type="text" id="editHrvType" list="hrvTypeList" placeholder="Chọn hoặc nhập mới...">
-                            <datalist id="hrvTypeList"></datalist>
+                            <div class="custom-dropdown" id="hrvTypeDropdown">
+                                <input type="text" id="editHrvType" placeholder="Gõ để tìm kiếm..." autocomplete="off"
+                                    onclick="toggleHrvDropdown('type')">
+                                <div class="dropdown-list" id="hrvTypeList"></div>
+                            </div>
                         </div>
                     </div>
                     <div class="col">
                         <div class="input-group">
                             <label>Nhà cung cấp (Vendor)</label>
-                            <input type="text" id="editHrvVendor" list="hrvVendorList"
-                                placeholder="Chọn hoặc nhập mới...">
-                            <datalist id="hrvVendorList"></datalist>
+                            <div class="custom-dropdown" id="hrvVendorDropdown">
+                                <input type="text" id="editHrvVendor" placeholder="Gõ để tìm kiếm..." autocomplete="off"
+                                    onclick="toggleHrvDropdown('vendor')">
+                                <div class="dropdown-list" id="hrvVendorList"></div>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -1819,3 +1819,75 @@ input:checked+.slider:before {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 10px;
 }
+
+/* Custom Dropdown for Haravan Product Type & Vendor */
+.custom-dropdown {
+  position: relative;
+  width: 100%;
+}
+
+.custom-dropdown input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--glass-border);
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.custom-dropdown input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.custom-dropdown .dropdown-list {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  background: rgba(30, 30, 40, 0.98);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  margin-top: 4px;
+  z-index: 1000;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.custom-dropdown .dropdown-list.show {
+  display: block;
+}
+
+.custom-dropdown .dropdown-item {
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-muted);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.15s ease;
+}
+
+.custom-dropdown .dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.custom-dropdown .dropdown-item:hover {
+  background: rgba(99, 102, 241, 0.2);
+  color: var(--text-primary);
+}
+
+.custom-dropdown .dropdown-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-dropdown .dropdown-list::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.4);
+  border-radius: 10px;
+}
+
+.custom-dropdown .dropdown-list::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}

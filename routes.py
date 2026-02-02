@@ -956,6 +956,34 @@ def haravan_collections():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@api_bp.route('/api/v2/haravan/product-types', methods=['GET'])
+def haravan_product_types():
+    """Lấy danh sách Product Types và Vendors từ Haravan."""
+    from post_service.haravan_publisher import HaravanPublisher
+    try:
+        configs = SheetService.get_all_rows("Haravan_Config")
+        if not configs:
+            return jsonify({"error": "Chưa cấu hình Haravan"}), 400
+        
+        config = configs[0]
+        shop_url = config.get("shop_url")
+        token = config.get("access_token")
+        
+        if not shop_url or not token:
+            return jsonify({"error": "Thiếu Shop URL hoặc Access Token"}), 400
+        
+        publisher = HaravanPublisher(shop_url, token)
+        result = publisher.get_product_types()
+        
+        if result.get("success"):
+            return jsonify({
+                "product_types": result.get("types", []),
+                "vendors": result.get("vendors", [])
+            })
+        return jsonify({"error": result.get("error", "Unknown error")}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @api_bp.route('/api/v2/woocommerce/db', methods=['GET'])
 def woocommerce_db():
     """Lấy danh sách sản phẩm từ Woocommerce_db."""

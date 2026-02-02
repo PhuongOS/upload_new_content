@@ -2434,6 +2434,9 @@ function openEditHaravanModal(index) {
     // Load collection chips
     loadHrvCollections(item.collection_id || '');
 
+    // Load product types and vendors for datalist
+    loadHrvProductTypes();
+
     // Load image preview
     const imgContainer = document.getElementById('hrvImagePreview');
     if (item.images) {
@@ -2525,6 +2528,85 @@ function toggleHrvCollection(el) {
         .map(c => c.dataset.id);
     document.getElementById('editHrvCollection').value = selected.join(',');
 }
+
+// Load Product Types and Vendors for datalists
+let hrvProductTypesCache = null;
+async function loadHrvProductTypes() {
+    // Use cache if available
+    if (hrvProductTypesCache) {
+        populateHrvDataLists(hrvProductTypesCache);
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/v2/haravan/product-types');
+        if (res.ok) {
+            hrvProductTypesCache = await res.json();
+            populateHrvDataLists(hrvProductTypesCache);
+        }
+    } catch (e) {
+        console.error('Error loading product types:', e);
+    }
+}
+
+function populateHrvDataLists(data) {
+    const typeList = document.getElementById('hrvTypeList');
+    const vendorList = document.getElementById('hrvVendorList');
+
+    if (typeList && data.product_types) {
+        typeList.innerHTML = data.product_types.map(t =>
+            `<div class="dropdown-item" onclick="selectHrvDropdownItem('type', '${t}')">${t}</div>`
+        ).join('');
+    }
+
+    if (vendorList && data.vendors) {
+        vendorList.innerHTML = data.vendors.map(v =>
+            `<div class="dropdown-item" onclick="selectHrvDropdownItem('vendor', '${v}')">${v}</div>`
+        ).join('');
+    }
+}
+
+function toggleHrvDropdown(type) {
+    const listId = type === 'type' ? 'hrvTypeList' : 'hrvVendorList';
+    const list = document.getElementById(listId);
+    list.classList.toggle('show');
+}
+
+function selectHrvDropdownItem(type, value) {
+    const inputId = type === 'type' ? 'editHrvType' : 'editHrvVendor';
+    const listId = type === 'type' ? 'hrvTypeList' : 'hrvVendorList';
+
+    document.getElementById(inputId).value = value;
+    document.getElementById(listId).classList.remove('show');
+}
+
+// Filter dropdown on typing
+document.addEventListener('DOMContentLoaded', () => {
+    ['editHrvType', 'editHrvVendor'].forEach(inputId => {
+        const input = document.getElementById(inputId);
+        if (input) {
+            input.addEventListener('input', function () {
+                const listId = inputId === 'editHrvType' ? 'hrvTypeList' : 'hrvVendorList';
+                const list = document.getElementById(listId);
+                const filter = this.value.toLowerCase();
+
+                list.querySelectorAll('.dropdown-item').forEach(item => {
+                    const match = item.textContent.toLowerCase().includes(filter);
+                    item.style.display = match ? 'block' : 'none';
+                });
+
+                list.classList.add('show');
+            });
+        }
+    });
+
+    // Close dropdowns when clicking outside
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('.custom-dropdown')) {
+            document.querySelectorAll('.dropdown-list').forEach(l => l.classList.remove('show'));
+        }
+    });
+});
 
 
 async function saveHaravanItemEdit() {
