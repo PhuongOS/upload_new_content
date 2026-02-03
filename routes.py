@@ -677,6 +677,7 @@ def post_publish():
     if not sheet_name or index is None:
         return jsonify({"error": "Thiếu thông tin bảng tính hoặc dòng"}), 400
     
+    
     task_id = str(uuid.uuid4())
     tasks[task_id] = {
         "status": "queued", 

@@ -2763,6 +2763,9 @@ async function saveAndPublishHaravan() {
         return;
     }
 
+    // Capture images before closing modal (which clears them)
+    const imagesToSend = [...hrvPendingLocalImages];
+
     // Close modal and show progress
     closeEditHaravanModal();
     addProgressItem(`[Haravan] Bắt đầu đăng bài #${item.stt}...`);
@@ -2775,7 +2778,7 @@ async function saveAndPublishHaravan() {
             body: JSON.stringify({
                 sheet_name: 'Haravan_db',
                 index: index,
-                local_images: hrvPendingLocalImages  // Send Base64 images
+                local_images: imagesToSend  // Send captured images
             })
         });
 

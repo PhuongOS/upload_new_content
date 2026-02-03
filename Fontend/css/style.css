@@ -947,6 +947,7 @@ input[type="text"]:focus {
   background: rgba(255, 255, 255, 0.03);
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 12px;
   border-top: 1px solid var(--glass-border);
 }
