@@ -2337,8 +2337,18 @@ function renderHaravanTable(data) {
     }
 
     const html = data.map((item, index) => {
-        const statusClass = item.status === 'SUCCESS' ? 'success' : (item.status === 'ERROR' ? 'danger' : 'warning');
-        const statusText = item.status || 'PENDING';
+        let statusClass = 'status-warning';
+        let statusText = item.status || 'PENDING';
+
+        if (item.status === 'SUCCESS') {
+            statusClass = 'status-success';
+            statusText = 'PUBLISHED';
+        } else if (item.status === 'ERROR') {
+            statusClass = 'status-danger';
+            statusText = 'FAILED';
+        } else if (item.status === 'PENDING') {
+            statusText = 'PENDING';
+        }
 
         return `
             <tr>
@@ -2348,7 +2358,7 @@ function renderHaravanTable(data) {
                 </td>
                 <td>${item.regular_price}</td>
                 <td>${item.product_type || '-'}</td>
-                <td><span class="badge badge-${statusClass}">${statusText}</span></td>
+                <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                 <td>
                 
                     <div class="card-actions" style="justify-content: flex-start; align-items: center; border: none; padding: 0;">
