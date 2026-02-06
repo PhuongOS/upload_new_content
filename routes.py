@@ -192,6 +192,15 @@ def get_tasks():
     """
     return jsonify(tasks)
 
+@api_bp.route('/api/tasks/<task_id>')
+def get_task_status(task_id):
+    """
+    Lấy trạng thái của một task cụ thể.
+    """
+    if task_id not in tasks:
+        return jsonify({"error": "Task not found"}), 404
+    return jsonify(tasks[task_id])
+
 # --- API DỮ LIỆU GOOGLE SHEETS ---
 
 @api_bp.route('/api/sheets/full-data')
@@ -983,6 +992,50 @@ def haravan_product_types():
                 "vendors": result.get("vendors", [])
             })
         return jsonify({"error": result.get("error", "Unknown error")}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@api_bp.route('/api/v2/haravan/bulk-analyze', methods=['POST'])
+def haravan_bulk_analyze():
+    """Nhận file CSV chứa list link sản phẩm Haravan và bắt đầu phân tích hàng loạt."""
+    if 'file' not in request.files:
+        return jsonify({"error": "Không tìm thấy file"}), 400
+    
+    file = request.files['file']
+    api_key = request.form.get('api_key')
+    system_prompt = request.form.get('system_prompt')
+    
+    if not api_key:
+        return jsonify({"error": "Thiếu Gemini API Key"}), 400
+
+    try:
+        import csv
+        import io
+        
+        # Parse CSV file
+        stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
+        reader = csv.reader(stream)
+        urls = []
+        
+        for row in reader:
+            if row:
+                # Find URLs in the row (skip header)
+                for cell in row:
+                    if cell.startswith('http'):
+                        urls.append(cell.strip())
+                        break
+        
+        if not urls:
+            return jsonify({"error": "Không tìm thấy URL nào trong file"}), 400
+            
+        # Create background task
+        task_id = str(uuid.uuid4())
+        from logic import background_haravan_bulk_analyze
+        import threading
+        thread = threading.Thread(target=background_haravan_bulk_analyze, args=(task_id, urls, api_key, system_prompt))
+        thread.start()
+        
+        return jsonify({"success": True, "task_id": task_id, "count": len(urls)})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

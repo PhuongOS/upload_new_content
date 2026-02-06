@@ -475,3 +475,78 @@ def background_bulk_analyze(task_id, urls, api_key, system_prompt=None):
     tasks[task_id]["progress"] = "Hoàn tất phân tích hàng loạt!"
     tasks[task_id]["message"] = f"Thành công: {success_count}, Thất bại: {fail_count}"
     tasks[task_id]["result"] = {"success": success_count, "fail": fail_count}
+
+def background_haravan_bulk_analyze(task_id, urls, api_key, system_prompt=None):
+    """
+    Xử lý hàng loạt các URL cho Haravan: Cào dữ liệu -> AI viết bài -> Thêm vào Haravan_db.
+    """
+    tasks[task_id] = {"status": "processing", "progress": "Bắt đầu phân tích hàng loạt...", "message": f"Danh sách có {len(urls)} URLs"}
+    
+    from services.url_analyzer import URLAnalyzer
+    from services.sheet_service import SheetService
+    from models.Haravan_db import HaravanDbModel
+    
+    analyzer = URLAnalyzer(api_key, system_prompt)
+    success_count = 0
+    fail_count = 0
+    
+    # Get current row count to calculate starting STT
+    try:
+        current_data = SheetService.get_all_rows(HaravanDbModel.SHEET_NAME)
+        # current_data includes header, so len(current_data) = total rows including header
+        # Next STT = len(current_data) (because header is row 1, data starts from row 2)
+        current_stt = len(current_data)
+    except Exception as e:
+        print(f"[Haravan-Bulk] Warning: Could not get current row count, starting from 1: {e}")
+        current_stt = 0
+    
+    for i, url in enumerate(urls):
+        url = url.strip()
+        if not url: continue
+        
+        tasks[task_id]["progress"] = f"Đang xử lý ({i+1}/{len(urls)}): {url[:30]}..."
+        print(f"[Haravan-Bulk-Analyze] Processing {i+1}/{len(urls)}: {url}")
+        
+        try:
+            # 1. Scrape & AI Generate
+            raw_data = analyzer.scrape_product_info(url)
+            if "error" in raw_data:
+                raise Exception(raw_data["error"])
+                
+            res = analyzer.generate_seo_product(raw_data)
+            if "error" in res:
+                raise Exception(res["error"])
+            
+            # 2. Increment STT for this product
+            current_stt += 1
+            
+            # 3. Chuẩn bị data để lưu vào Sheet (Haravan DB structure)
+            product = {
+                "stt": str(current_stt),  # Auto-incremented STT
+                "product_title": res.get("title", "No Title"),
+                "regular_price": res.get("regular_price", ""),
+                "sale_price": res.get("sale_price", ""),
+                "product_type": res.get("product_type", ""),
+                "vendor": res.get("vendor", ""),
+                "tags": res.get("tags", ""),
+                "description_html": res.get("description", ""),
+                "short_description": res.get("short_description", ""),
+                "images": res.get("images", ""),
+                "source_url": url,
+                "status": "PENDING"
+            }
+            
+            # 4. Lưu ngay lập tức vào Sheet
+            SheetService.append_row(HaravanDbModel.SHEET_NAME, product)
+            success_count += 1
+            tasks[task_id]["message"] = f"✅ Đã thêm: {product['product_title'][:40]}..."
+            
+        except Exception as e:
+            print(f"[Haravan-Bulk-Analyze] Error on {url}: {e}")
+            fail_count += 1
+            tasks[task_id]["message"] = f"❌ Lỗi link thứ {i+1}: {str(e)[:50]}"
+            
+    tasks[task_id]["status"] = "success"
+    tasks[task_id]["progress"] = "Hoàn tất phân tích hàng loạt!"
+    tasks[task_id]["message"] = f"Thành công: {success_count}, Thất bại: {fail_count}"
+    tasks[task_id]["result"] = {"success": success_count, "fail": fail_count}

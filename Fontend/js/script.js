@@ -2281,10 +2281,23 @@ function startBulkPolling(taskId) {
     const interval = setInterval(async () => {
         try {
             const res = await fetch('/api/tasks');
+
+            if (!res.ok) {
+                console.warn('[WooBulk] API error:', res.status);
+                clearInterval(interval);
+                statusDiv.style.display = 'none';
+                return;
+            }
+
             const tasks = await res.json();
             const task = tasks[taskId];
 
-            if (!task) return;
+            if (!task) {
+                console.warn('[WooBulk] Task not found in tasks list');
+                clearInterval(interval);
+                statusDiv.style.display = 'none';
+                return;
+            }
 
             // Refresh table real-time to show new items
             loadWooDb();
@@ -2303,7 +2316,11 @@ function startBulkPolling(taskId) {
                 statusDiv.style.display = 'none';
                 showErrorModal("Lỗi phân tích hàng loạt", task.message);
             }
-        } catch (e) { console.error(e); }
+        } catch (e) {
+            console.error('[WooBulk] Polling error:', e);
+            clearInterval(interval);
+            statusDiv.style.display = 'none';
+        }
     }, 5000);
 }
 
@@ -2956,86 +2973,104 @@ function handleHaravanBulkAnalyzeCsv(event) {
     const file = event.target.files[0];
     if (!file) return;
 
+    const apiKey = localStorage.getItem('geminiApiKey');
+    if (!apiKey) {
+        alert('Vui lòng cấu hình Gemini API Key trước!');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('api_key', apiKey.trim());
+    formData.append('system_prompt', localStorage.getItem('haravanSystemPrompt') || 'You are a Haravan Product Expert...');
+
     const statusEl = document.getElementById('hrvBulkAnalyzeStatus');
     const progressEl = document.getElementById('hrvBulkAnalyzeProgress');
+
     statusEl.style.display = 'block';
     progressEl.style.width = '0%';
+    statusEl.querySelector('.status-text').textContent = 'Đang upload và phân tích...';
 
-    const reader = new FileReader();
-    reader.onload = async function (e) {
-        const text = e.target.result;
-        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-        const links = [];
-        const urlRegex = /(https?:\/\/[^\s,]+)/g;
-
-        lines.forEach(line => {
-            const match = line.match(urlRegex);
-            if (match) links.push(match[0]);
-        });
-
-        if (links.length === 0) {
-            alert("Không tìm thấy link hợp lệ trong file CSV!");
-            statusEl.style.display = 'none';
-            return;
-        }
-
-        // Use custom confirm modal instead of browser confirm
-        const confirmed = await showConfirmModal({
-            title: "Xác nhận phân tích",
-            message: `Tìm thấy ${links.length} links. Bắt đầu phân tích? (Có thể mất vài phút)`,
-            type: "primary",
-            okText: "Bắt đầu"
-        });
-
-        if (!confirmed) {
-            statusEl.style.display = 'none';
-            return;
-        }
-
-        let completed = 0;
-        for (const link of links) {
-            try {
-                const res = await fetch('/api/v2/haravan/analyze', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        url: link,
-                        api_key: localStorage.getItem('geminiApiKey'),
-                        system_prompt: localStorage.getItem('haravanSystemPrompt') || "You are a Haravan Product Expert...",
-                    })
-                });
-
-                if (res.ok) {
-                    const data = await res.json();
-                    const newItem = {
-                        stt: currentHaravanData.length + 1,
-                        product_title: data.title || 'Draft Product',
-                        regular_price: data.price ? data.price.toString().replace(/[^0-9]/g, '') : '0',
-                        product_type: data.product_type || '',
-                        vendor: data.vendor || '',
-                        tags: data.tags || '',
-                        description_html: data.description || '',
-                        short_description: data.short_description || '',
-                        images: data.images || '',
-                        source_url: link,
-                        status: 'PENDING'
-                    };
-                    await fetch('/api/v2/sheets/Haravan_db', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(newItem)
-                    });
-                }
-            } catch (err) {
-                console.warn("Error analyzing link", link, err);
+    fetch('/api/v2/haravan/bulk-analyze', {
+        method: 'POST',
+        body: formData
+    })
+        .then(res => res.json())
+        .then(result => {
+            if (result.success) {
+                console.log(`[Haravan Bulk] Task created: ${result.task_id}, ${result.count} links`);
+                pollHaravanBulkTask(result.task_id, result.count);
+            } else {
+                alert(`Lỗi: ${result.error}`);
+                statusEl.style.display = 'none';
             }
-            completed++;
-            progressEl.style.width = `${(completed / links.length) * 100}%`;
-        }
+        })
+        .catch(err => {
+            alert(`Lỗi kết nối: ${err.message}`);
+            statusEl.style.display = 'none';
+        });
 
-        alert("Hoàn tất phân tích hàng loạt!");
-        statusEl.style.display = 'none';
-        loadHaravanDb();
-    };
-    reader.readAsText(file);
+    // Reset input
+    event.target.value = '';
+}
+
+function pollHaravanBulkTask(taskId, totalCount) {
+    const statusEl = document.getElementById('hrvBulkAnalyzeStatus');
+    const progressEl = document.getElementById('hrvBulkAnalyzeProgress');
+    const statusText = statusEl.querySelector('.status-text');
+
+    const interval = setInterval(async () => {
+        try {
+            const res = await fetch(`/api/tasks/${taskId}`);
+
+            // Stop polling if task not found
+            if (res.status === 404) {
+                console.warn('[Polling] Task not found, stopping...');
+                clearInterval(interval);
+                statusEl.style.display = 'none';
+                return;
+            }
+
+            if (!res.ok) {
+                console.warn('[Polling] API error:', res.status);
+                clearInterval(interval);
+                statusEl.style.display = 'none';
+                alert('Lỗi khi kiểm tra tiến độ.');
+                return;
+            }
+
+            const task = await res.json();
+
+            statusText.textContent = task.message || task.progress || 'Đang xử lý...';
+
+            // Estimate progress if task doesn't provide it
+            if (totalCount && task.message) {
+                const match = task.message.match(/\((\d+)\/\d+\)/);
+                if (match) {
+                    const current = parseInt(match[1]);
+                    progressEl.style.width = `${(current / totalCount) * 100}%`;
+                }
+            }
+
+            if (task.status === 'success') {
+                clearInterval(interval);
+                progressEl.style.width = '100%';
+                statusText.textContent = task.message || 'Hoàn tất!';
+                setTimeout(() => {
+                    statusEl.style.display = 'none';
+                    loadHaravanDb(); // Reload data
+                    alert(`Phân tích hoàn tất!\n${task.message}`);
+                }, 1500);
+            } else if (task.status === 'error') {
+                clearInterval(interval);
+                statusEl.style.display = 'none';
+                alert(`Lỗi: ${task.message}`);
+            }
+        } catch (err) {
+            console.warn('[Polling] Error:', err);
+            // Stop polling on network errors after a few retries
+            clearInterval(interval);
+            statusEl.style.display = 'none';
+        }
+    }, 2000); // Poll every 2 seconds
 }
