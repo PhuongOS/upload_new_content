@@ -3072,5 +3072,134 @@ function pollHaravanBulkTask(taskId, totalCount) {
             clearInterval(interval);
             statusEl.style.display = 'none';
         }
-    }, 2000); // Poll every 2 seconds
+    }); // Poll every 2 seconds
+}
+
+// --- CONFIG EXPORT / IMPORT ---
+
+async function exportSystemConfig() {
+    try {
+        // Trigger backend export
+        const res = await fetch('/api/v2/config/export');
+        if (!res.ok) throw new Error('Failed to export config from server');
+
+        const blob = await res.blob();
+        const text = await blob.text();
+        const serverData = JSON.parse(text);
+
+        // 1. Capture Client-side General Config (Always Visible)
+        const clientData = {
+            general: {
+                parentFolderId: document.getElementById('parentFolderId').value || "",
+                sheetId: document.getElementById('sheetId').value || "",
+                geminiApiKey: document.getElementById('geminiApiKey').value || "",
+                fbGeminiSystemPrompt: document.getElementById('fbGeminiSystemPrompt').value || "",
+                ytGeminiSystemPrompt: document.getElementById('ytGeminiSystemPrompt').value || "",
+                wooGeminiSystemPrompt: document.getElementById('wooGeminiSystemPrompt').value || "",
+                haravanSystemPrompt: document.getElementById('haravanSystemPrompt').value || "",
+            }
+        };
+
+        // 2. Capture WooCommerce Config from Modal Inputs (If user entered data)
+        const wcUrl = document.getElementById('wc_url').value;
+        const wcKey = document.getElementById('wc_key').value;
+
+        // Only override if inputs have values (User opened modal or typed)
+        // Check core fields to decide
+        if (wcUrl || wcKey) {
+            clientData.woocommerce = {
+                site_url: wcUrl,
+                consumer_key: wcKey,
+                consumer_secret: document.getElementById('wc_secret').value,
+                wp_user: document.getElementById('wp_user').value,
+                wp_app_pass: document.getElementById('wp_app_pass').value
+            };
+        }
+
+        // 3. Capture Haravan Config from Modal Inputs
+        const hrvUrl = document.getElementById('hrv_url').value;
+        const hrvToken = document.getElementById('hrv_token').value;
+
+        if (hrvUrl || hrvToken) {
+            clientData.haravan = {
+                shop_url: hrvUrl,
+                access_token: hrvToken
+            };
+        }
+
+        // Merge: Server Data is Base <- Client Data Overrides
+        const finalData = { ...serverData, ...clientData };
+        if (clientData.woocommerce) finalData.woocommerce = clientData.woocommerce;
+        if (clientData.haravan) finalData.haravan = clientData.haravan;
+
+        // Download
+        const jsonStr = JSON.stringify(finalData, null, 2);
+        const finalBlob = new Blob([jsonStr], { type: 'application/json' });
+        const url = window.URL.createObjectURL(finalBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `system_config_backup_${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+    } catch (e) {
+        alert('Lỗi export: ' + e.message);
+    }
+}
+
+async function importSystemConfig(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    // Confirm override
+    if (!confirm("Hành động này sẽ GHI ĐÈ các cấu hình hiện tại. Bạn có chắc chắn muốn tiếp tục?")) {
+        event.target.value = '';
+        return;
+    }
+
+    try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+
+        // 1. Restore Client-side data (General Config)
+        if (data.general) {
+            if (data.general.parentFolderId) document.getElementById('parentFolderId').value = data.general.parentFolderId;
+            if (data.general.sheetId) document.getElementById('sheetId').value = data.general.sheetId;
+            if (data.general.geminiApiKey) document.getElementById('geminiApiKey').value = data.general.geminiApiKey;
+            if (data.general.fbGeminiSystemPrompt) document.getElementById('fbGeminiSystemPrompt').value = data.general.fbGeminiSystemPrompt;
+            if (data.general.ytGeminiSystemPrompt) document.getElementById('ytGeminiSystemPrompt').value = data.general.ytGeminiSystemPrompt;
+            if (data.general.wooGeminiSystemPrompt) document.getElementById('wooGeminiSystemPrompt').value = data.general.wooGeminiSystemPrompt;
+            if (data.general.haravanSystemPrompt) document.getElementById('haravanSystemPrompt').value = data.general.haravanSystemPrompt;
+
+            // Save to LocalStorage immediately
+            saveConfig();
+        }
+
+        // 2. Upload to Backend for other configs (Woo, Haravan, FB, YT)
+        // We re-upload the file to the new endpoint
+        const formData = new FormData();
+        // Re-create file from text/modified json if needed, but original file is fine
+        // Using original file for backend import
+        formData.append('file', file);
+
+        const res = await fetch('/api/v2/config/import', {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await res.json();
+        if (res.ok) {
+            alert('Restore cấu hình thành công!\nVui lòng reload lại trang để cập nhật giao diện.');
+            location.reload();
+        } else {
+            alert('Lỗi import server: ' + result.error);
+        }
+
+    } catch (e) {
+        alert('Lỗi file JSON không hợp lệ: ' + e.message);
+    } finally {
+        event.target.value = '';
+    }
 }
