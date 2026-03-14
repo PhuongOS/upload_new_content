@@ -42,9 +42,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Deploy to Caprover
-        uses: caprover/deploy-from-github@v1.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
         with:
-          server: '${{ secrets.CAPROVER_SERVER }}'
-          app: '${{ secrets.CAPROVER_APP }}'
-          token: '${{ secrets.CAPROVER_PASSWORD }}'
+          node-version: '18'
+
+      - name: Install CapRover CLI
+        run: npm install -g caprover
+
+      - name: Deploy to CapRover
+        run: caprover deploy -h ${{ secrets.CAPROVER_SERVER }} -a ${{ secrets.CAPROVER_APP }} -p ${{ secrets.CAPROVER_PASSWORD }} -d ./captain-definition
