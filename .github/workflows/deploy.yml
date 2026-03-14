@@ -34,21 +34,31 @@ jobs:
         run: pytest
 
   deploy:
-    name: Deploy to CapRover
-    needs: test  # Deploy chỉ chạy sau khi Test kết thúc
+    name: Deploy App to CapRover
+    needs: test
     runs-on: ubuntu-latest
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
+      - name: Create tarball
+        uses: a7ul/tar-action@v1.1.0
         with:
-          node-version: '18'
+          command: c
+          cwd: "./"
+          # Lấy những thư mục và file cần thiết cho server chạy
+          files: |
+            *
+            !.git
+            !.github
+            !venv
+            !__pycache__
+          outPath: deploy.tar
 
-      - name: Install CapRover CLI
-        run: npm install -g caprover
-
-      - name: Deploy to CapRover
-        run: caprover deploy -h ${{ secrets.CAPROVER_SERVER }} -a ${{ secrets.CAPROVER_APP }} -p ${{ secrets.CAPROVER_PASSWORD }}
+      - name: Deploy App to CapRover
+        uses: caprover/deploy-from-github@v1.0.1
+        with:
+          server: '${{ secrets.CAPROVER_SERVER }}'
+          app: '${{ secrets.CAPROVER_APP }}'
+          token: '${{ secrets.CAPROVER_PASSWORD }}'
