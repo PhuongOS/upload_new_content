@@ -4,7 +4,7 @@
 import os
 import json
 import uuid
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
@@ -96,9 +96,9 @@ class AccountService:
         else:
             redirect_uri = f"{host_url.rstrip('/')}/api/auth/callback" if host_url else 'http://localhost:8080/api/auth/callback'
 
-        flow = InstalledAppFlow.from_client_secrets_file(
+        flow = Flow.from_client_secrets_file(
             CREDENTIALS_FILE, 
-            YOUTUBE_SCOPES,
+            scopes=YOUTUBE_SCOPES,
             redirect_uri=redirect_uri
         )
         
@@ -176,9 +176,9 @@ class AccountService:
     @staticmethod
     def fetch_and_save_account_token(code, redirect_uri='http://localhost:8080/api/auth/callback'):
         """Lấy token cho multi-account từ code và lưu lại."""
-        flow = InstalledAppFlow.from_client_secrets_file(
+        flow = Flow.from_client_secrets_file(
             CREDENTIALS_FILE, 
-            YOUTUBE_SCOPES,
+            scopes=YOUTUBE_SCOPES,
             redirect_uri=redirect_uri
         )
         flow.fetch_token(code=code)
