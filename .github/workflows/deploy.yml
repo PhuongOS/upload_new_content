@@ -1,12 +1,41 @@
-name: Deploy to CapRover
+name: CI/CD Pipeline
 
 on:
   push:
     branches:
-      - main  # Trigger deployment on push to main branch
+      - main  # Trigger pipeline on push to main branch
 
 jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest  # Đảm bảo pytest được cài đặt để chạy test
+
+      - name: Run tests
+        # Chạy tất cả các file có đuôi test_*.py
+        # Nếu test cần file token.json hoặc credentials, bạn có thể phải dùng GitHub Secrets để tạo ra chúng ở bước trước.
+        # Ở đây tạm thời để continue-on-error là true để không chặn deploy nếu có file test cũ bị hỏng do thiếu Auth Token nội bộ.
+        continue-on-error: true
+        run: pytest
+
   deploy:
+    name: Deploy to CapRover
+    needs: test  # Deploy chỉ chạy sau khi Test kết thúc
     runs-on: ubuntu-latest
     
     steps:
