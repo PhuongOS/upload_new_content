@@ -42,6 +42,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Inject Google Credentials
+        env:
+          GOOGLE_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+        run: |
+          mkdir -p assect
+          echo "$GOOGLE_JSON" > assect/AouthGoogle.json
+
       - name: Create tarball
         run: tar -cvf deploy.tar --exclude='.git' --exclude='.github' --exclude='venv' --exclude='__pycache__' .
 
