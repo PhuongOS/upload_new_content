@@ -18,5 +18,4 @@ jobs:
         with:
           server: '${{ secrets.CAPROVER_SERVER }}'
           app: '${{ secrets.CAPROVER_APP }}'
-          password: '${{ secrets.CAPROVER_PASSWORD }}'
-          branch: 'main'
+          token: '${{ secrets.CAPROVER_PASSWORD }}'
