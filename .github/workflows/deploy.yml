@@ -51,4 +51,4 @@ jobs:
         run: npm install -g caprover
 
       - name: Deploy to CapRover
-        run: caprover deploy -h ${{ secrets.CAPROVER_SERVER }} -a ${{ secrets.CAPROVER_APP }} -p ${{ secrets.CAPROVER_PASSWORD }} -d ./captain-definition
+        run: caprover deploy -h ${{ secrets.CAPROVER_SERVER }} -a ${{ secrets.CAPROVER_APP }} -p ${{ secrets.CAPROVER_PASSWORD }}
