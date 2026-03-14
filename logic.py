@@ -82,17 +82,12 @@ def get_auth_url_main(host_url=None):
     if not os.path.exists(CREDENTIALS_FILE):
         raise FileNotFoundError(f"Không tìm thấy file credentials tại {CREDENTIALS_FILE}")
         
-    is_desktop = _is_desktop_creds()
-    if is_desktop:
-        # Desktop App: Nếu có host_url (truy cập từ web), dùng port thực tế của web.
-        # Nếu không (môi trường khác), fallback về 8080 chuẩn.
-        if host_url and ('localhost' in host_url or '127.0.0.1' in host_url):
-            redirect_uri = f"{host_url.rstrip('/')}/api/auth/callback"
-        else:
-            redirect_uri = 'http://localhost:8080/api/auth/callback'
+    # Luôn dùng host_url được truyền vào từ request (nếu có)
+    # Nếu không truyền, mặc định là http://localhost:3000
+    if host_url:
+        redirect_uri = f"{host_url.rstrip('/')}/api/auth/callback"
     else:
-        # Web App: Luôn dùng domain thực tế
-        redirect_uri = f"{host_url.rstrip('/')}/api/auth/callback" if host_url else 'http://localhost:8080/api/auth/callback'
+        redirect_uri = 'http://localhost:3000/api/auth/callback'
 
     flow = InstalledAppFlow.from_client_secrets_file(
         CREDENTIALS_FILE, 

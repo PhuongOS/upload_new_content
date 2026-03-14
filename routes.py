@@ -55,19 +55,10 @@ def auth_callback():
     
     try:
         # Re-construct redirect_uri (Phải khớp chính xác với lúc bắt đầu)
-        is_desktop = _is_desktop_creds()
         protocol = request.headers.get('X-Forwarded-Proto', 'http')
         host = request.headers.get('Host', request.host)
         
-        if is_desktop:
-            # Desktop App: Nếu đang chạy local, dùng đúng port đang chạy thay vì ép 8080
-            if 'localhost' in host or '127.0.0.1' in host:
-                redirect_uri = f"http://{host}/api/auth/callback"
-            else:
-                redirect_uri = 'http://localhost:8080/api/auth/callback'
-        else:
-            # Web App: Dùng domain thực tế
-            redirect_uri = f"{protocol}://{host}/api/auth/callback"
+        redirect_uri = f"{protocol}://{host}/api/auth/callback"
             
         print(f"[Auth] Callback received. Exchange with redirect_uri: {redirect_uri}")
             
